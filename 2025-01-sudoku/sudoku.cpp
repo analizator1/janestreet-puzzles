@@ -201,7 +201,7 @@ BestCell find_best_cell(int num_available_digits_threshold, int search_row_hint)
 	return best_cell;
 }
 
-constexpr unsigned int progress_max_level = 12;
+constexpr unsigned int progress_max_level = 20;
 
 struct Progress
 {
@@ -212,6 +212,7 @@ struct Progress
 Progress progress_at_level[progress_max_level + 1];
 
 std::chrono::steady_clock::time_point start_time;
+std::chrono::steady_clock::time_point last_progress_time;
 
 void print_progress(unsigned int const rec_search_level)
 {
@@ -269,24 +270,31 @@ void rec_search(unsigned int const rec_search_level, int const num_available_dig
 		{
 			progress_at_level[rec_search_level].total = best_cell.num_available_digits;
 
-			std::cout << '\n';
-			std::cout << "considering " << best_cell.num_available_digits
-				<< " digits for cell (" << best_cell.row << ", " << best_cell.col
-				<< ") at recursion level " << rec_search_level << '\n';
-			print_progress(rec_search_level);
-
-			static unsigned int num_progress_prints;
-			if (++num_progress_prints % 10 == 0)
+			static unsigned int num_since_time_check;
+			if (++num_since_time_check == 100)
 			{
-				// Print extended info about algorithm progress.
-				print_best_solution();
+				num_since_time_check = 0;
+				auto const now = std::chrono::steady_clock::now();
+				if (now - last_progress_time > std::chrono::seconds(30))
+				{
+					print_best_solution();
 
-				std::cout << '\n';
-				std::cout << "=== current grid ===\n";
-				print_grid(grid);
+					std::cout << '\n';
+					std::cout << "=== current grid ===\n";
+					std::cout << "current unused digit: " << char('0' + cur_unused_digit) << '\n';
+					print_grid(grid);
+
+					std::cout << '\n';
+					std::cout << "considering " << best_cell.num_available_digits
+						<< " digits for cell (" << best_cell.row << ", " << best_cell.col
+						<< ") at recursion level " << rec_search_level << '\n';
+					print_progress(rec_search_level);
+
+					std::cout.flush();
+
+					last_progress_time = now;
+				}
 			}
-
-			std::cout.flush();
 		}
 
 		// recursively try available digits
@@ -341,6 +349,7 @@ int main()
 	int const num_unused = 10 - used.size();
 	progress_at_level[0] = {0, num_unused};
 	start_time = std::chrono::steady_clock::now();
+	last_progress_time = start_time;
 	for (int8_t digit = 0; digit < 10; ++digit)
 	{
 		if (used.find(digit) == used.end())

@@ -15,12 +15,12 @@ enum class CellType: uint8_t
 	BackwardMirror
 };
 
-enum LasersRowIdx
+enum LaserSectionIdx
 {
-	top_idx,
-	right_idx,
-	bottom_idx,
-	left_idx
+	TopLaserSection,
+	RightLaserSection,
+	BottomLaserSection,
+	LeftLaserSection
 };
 
 class Board
@@ -35,15 +35,13 @@ public:
 
 	CellType & cell(int row, int col)
 	{
-		assert(row >= 0 && row < n);
-		assert(col >= 0 && col < n);
+		assert(is_on_board(row, col));
 		return cells[row * n + col];
 	}
 
 	CellType cell(int row, int col) const
 	{
-		assert(row >= 0 && row < n);
-		assert(col >= 0 && col < n);
+		assert(is_on_board(row, col));
 		return cells[row * n + col];
 	}
 
@@ -52,54 +50,52 @@ public:
 		return lasers.get();
 	}
 
-	unsigned int & laser(int row, int col)
+	bool is_on_board(int row, int col) const
 	{
+		return (row >= 0 && row < n) && (col >= 0 && col < n);
+	}
+
+	std::pair<int, int> get_laser_section_and_offset(int row, int col) const
+	{
+		int laser_section_idx = -1;
+		int offset = -1;
+
 		if (row == -1) // top
 		{
-			assert(col >= 0 && col < n);
-			return lasers[top_idx * n + col];
+			laser_section_idx = TopLaserSection;
+			offset = col;
 		}
-		if (col == n) // right
+		else if (col == n) // right
 		{
-			assert(row >= 0 && row < n);
-			return lasers[right_idx * n + row];
+			laser_section_idx = RightLaserSection;
+			offset = row;
 		}
-		if (row == n) // bottom
+		else if (row == n) // bottom
 		{
-			assert(col >= 0 && col < n);
-			return lasers[bottom_idx * n + col];
+			laser_section_idx = BottomLaserSection;
+			offset = col;
 		}
-		if (col == -1) // left
+		else if (col == -1) // left
 		{
-			assert(row >= 0 && row < n);
-			return lasers[left_idx * n + row];
+			laser_section_idx = LeftLaserSection;
+			offset = row;
 		}
-		assert(false);
+
+		assert(laser_section_idx >= 0 && laser_section_idx < 4);
+		assert(offset >= 0 && offset < n);
+		return {laser_section_idx, offset};
+	}
+
+	unsigned int & laser(int row, int col)
+	{
+		auto [laser_section_idx, offset] = get_laser_section_and_offset(row, col);
+		return lasers[laser_section_idx * n + offset];
 	}
 
 	unsigned int laser(int row, int col) const
 	{
-		if (row == -1) // top
-		{
-			assert(col >= 0 && col < n);
-			return lasers[top_idx * n + col];
-		}
-		if (col == n) // right
-		{
-			assert(row >= 0 && row < n);
-			return lasers[right_idx * n + row];
-		}
-		if (row == n) // bottom
-		{
-			assert(col >= 0 && col < n);
-			return lasers[bottom_idx * n + col];
-		}
-		if (col == -1) // left
-		{
-			assert(row >= 0 && row < n);
-			return lasers[left_idx * n + row];
-		}
-		assert(false);
+		auto [laser_section_idx, offset] = get_laser_section_and_offset(row, col);
+		return lasers[laser_section_idx * n + offset];
 	}
 
 private:
@@ -116,11 +112,6 @@ private:
 	std::unique_ptr<unsigned int[]> lasers;
 };
 
-static bool is_on_board(int row, int col)
-{
-	return (row >= 0 && row < n) && (col >= 0 && col < n);
-}
-
 std::ostream & operator<<(std::ostream & out, Board const & board)
 {
 	std::unique_ptr<std::string[]> lasers(new std::string[4 * n]);
@@ -133,7 +124,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	// go over top lasers
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = top_idx * n + col;
+		int idx = TopLaserSection * n + col;
 		std::ostringstream ostr;
 		if (board.get_lasers()[idx])
 			ostr << board.get_lasers()[idx];
@@ -144,7 +135,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	// go over right lasers
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = right_idx * n + row;
+		int idx = RightLaserSection * n + row;
 		std::ostringstream ostr;
 		if (board.get_lasers()[idx])
 			ostr << board.get_lasers()[idx];
@@ -155,7 +146,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	// go over bottom lasers
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = bottom_idx * n + col;
+		int idx = BottomLaserSection * n + col;
 		std::ostringstream ostr;
 		if (board.get_lasers()[idx])
 			ostr << board.get_lasers()[idx];
@@ -166,7 +157,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	// go over left lasers
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = left_idx * n + row;
+		int idx = LeftLaserSection * n + row;
 		std::ostringstream ostr;
 		if (board.get_lasers()[idx])
 			ostr << board.get_lasers()[idx];
@@ -187,7 +178,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 		for (int col = 0; col < n; ++col)
 		{
 			out << ' '; // column separator
-			int idx = top_idx * n + col;
+			int idx = TopLaserSection * n + col;
 			int leading_spaces = top_num_max_len - (int)lasers[idx].size();
 			// print actual digit or space
 			if (i < leading_spaces)
@@ -204,7 +195,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	{
 		// line starts with left laser's number
 		{
-			int idx = left_idx * n + row;
+			int idx = LeftLaserSection * n + row;
 			int leading_spaces = left_num_max_len - (int)lasers[idx].size();
 			for (int c = 0; c < leading_spaces; ++c)
 				out << ' ';
@@ -233,7 +224,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 
 		// line ends with right laser's number
 		{
-			int idx = right_idx * n + row;
+			int idx = RightLaserSection * n + row;
 			out << lasers[idx];
 		}
 
@@ -251,7 +242,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 		for (int col = 0; col < n; ++col)
 		{
 			out << ' '; // column separator
-			int idx = bottom_idx * n + col;
+			int idx = BottomLaserSection * n + col;
 			if (i < (int)lasers[idx].size())
 				out << lasers[idx][i];
 			else
@@ -281,7 +272,7 @@ int main()
 	std::cout << "Enter numbers of top lasers: ";
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = top_idx * n + col;
+		int idx = TopLaserSection * n + col;
 		std::cin >> board.get_lasers()[idx];
 	}
 
@@ -289,7 +280,7 @@ int main()
 	std::cout << "Enter numbers of right lasers: ";
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = right_idx * n + row;
+		int idx = RightLaserSection * n + row;
 		std::cin >> board.get_lasers()[idx];
 	}
 
@@ -297,7 +288,7 @@ int main()
 	std::cout << "Enter numbers of bottom lasers: ";
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = bottom_idx * n + col;
+		int idx = BottomLaserSection * n + col;
 		std::cin >> board.get_lasers()[idx];
 	}
 
@@ -305,7 +296,7 @@ int main()
 	std::cout << "Enter numbers of left lasers: ";
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = left_idx * n + row;
+		int idx = LeftLaserSection * n + row;
 		std::cin >> board.get_lasers()[idx];
 	}
 

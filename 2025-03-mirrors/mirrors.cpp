@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <sstream>
 
-static constexpr int n = 5; // side of field
+static constexpr int n = 10; // side of field
 
 enum class CellType: uint8_t
 {

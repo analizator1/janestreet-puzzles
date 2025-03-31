@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <functional>
+#include <limits>
 
 static constexpr int n = 10; // side of field
 
@@ -30,51 +31,74 @@ std::ostream & operator<<(std::ostream & out, Pos const & self)
 	return out << '{' << self.row << ", " << self.col << '}';
 }
 
-static Pos const dir_up    = {-1, 0};
-static Pos const dir_right = {0, 1};
-static Pos const dir_down  = {1, 0};
-static Pos const dir_left  = {0, -1};
+static Pos const vec_up    = {-1, 0};
+static Pos const vec_right = {0, 1};
+static Pos const vec_down  = {1, 0};
+static Pos const vec_left  = {0, -1};
 
-static Pos const all_dirs[4] = {dir_up, dir_right, dir_down, dir_left};
+static Pos const all_dirs[4] = {vec_up, vec_right, vec_down, vec_left};
 
 enum class CellType: uint8_t
 {
 	Empty = 0,
 	ForwardMirror,
-	BackwardMirror
+	BackwardMirror,
+	LaserBeam
 };
 
-enum LaserSectionIdx
+enum Direction
 {
-	TopLaserSection,
-	RightLaserSection,
-	BottomLaserSection,
-	LeftLaserSection
+	UpDir,
+	RightDir,
+	DownDir,
+	LeftDir
 };
 
-static Pos const laser_section_idx_to_start_dir[4] = {
-	dir_down, // TopLaserSection
-	dir_left, // RightLaserSection
-	dir_up,   // BottomLaserSection
-	dir_right // LeftLaserSection
+static Pos const direction_to_vec[4] = {
+	vec_up,
+	vec_right,
+	vec_down,
+	vec_left
 };
+
+static Direction const dir_after_forward_mirror[4] = {
+	RightDir,
+	UpDir,
+	LeftDir,
+	DownDir
+};
+
+static Direction const dir_after_backward_mirror[4] = {
+	LeftDir,
+	DownDir,
+	RightDir,
+	UpDir
+};
+
+static Direction opposite_direction(Direction dir)
+{
+	return Direction((dir + 2) % 4);
+}
 
 class Board
 {
 public:
 	Board():
 		cells(new CellType[n * n]{}),
-		lasers(new unsigned int[4 * n]{})
+		lasers(new unsigned int[4 * n]{}),
+		laser_has_path(new bool[4 * n]{})
 	{
 		std::cout << "Created board with side " << n << std::endl;
 	}
 
 	Board(Board const & other):
 		cells(new CellType[n * n]),
-		lasers(new unsigned int[4 * n])
+		lasers(new unsigned int[4 * n]),
+		laser_has_path(new bool[4 * n])
 	{
 		std::copy(&other.cells[0], &other.cells[n * n], &this->cells[0]);
 		std::copy(&other.lasers[0], &other.lasers[4 * n], &this->lasers[0]);
+		std::copy(&other.laser_has_path[0], &other.laser_has_path[4 * n], &this->laser_has_path[0]);
 	}
 
 	CellType & cell(int row, int col)
@@ -99,9 +123,24 @@ public:
 		return cell(pos.row, pos.col);
 	}
 
-	unsigned int * get_lasers() const
+	unsigned int * get_lasers()
 	{
 		return lasers.get();
+	}
+
+	unsigned int const * get_lasers() const
+	{
+		return lasers.get();
+	}
+
+	bool * get_laser_has_path()
+	{
+		return laser_has_path.get();
+	}
+
+	bool const * get_laser_has_path() const
+	{
+		return laser_has_path.get();
 	}
 
 	bool is_on_board(int row, int col) const
@@ -121,22 +160,22 @@ public:
 
 		if (row == -1) // top
 		{
-			laser_section_idx = TopLaserSection;
+			laser_section_idx = UpDir;
 			laser_offset = col;
 		}
 		else if (col == n) // right
 		{
-			laser_section_idx = RightLaserSection;
+			laser_section_idx = RightDir;
 			laser_offset = row;
 		}
 		else if (row == n) // bottom
 		{
-			laser_section_idx = BottomLaserSection;
+			laser_section_idx = DownDir;
 			laser_offset = col;
 		}
 		else if (col == -1) // left
 		{
-			laser_section_idx = LeftLaserSection;
+			laser_section_idx = LeftDir;
 			laser_offset = row;
 		}
 
@@ -145,17 +184,22 @@ public:
 		return {laser_section_idx, laser_offset};
 	}
 
+	std::pair<int, int> get_laser_section_and_offset(Pos const & pos) const
+	{
+		return get_laser_section_and_offset(pos.row, pos.col);
+	}
+
 	Pos laser_section_and_offset_to_pos(int laser_section_idx, int laser_offset) const
 	{
 		switch (laser_section_idx)
 		{
-		case TopLaserSection:
+		case UpDir:
 			return {-1, laser_offset};
-		case RightLaserSection:
+		case RightDir:
 			return {laser_offset, n};
-		case BottomLaserSection:
+		case DownDir:
 			return {n, laser_offset};
-		case LeftLaserSection:
+		case LeftDir:
 			return {laser_offset, -1};
 		}
 		assert(false);
@@ -164,13 +208,15 @@ public:
 	unsigned int & laser(int row, int col)
 	{
 		auto [laser_section_idx, laser_offset] = get_laser_section_and_offset(row, col);
-		return lasers[laser_section_idx * n + laser_offset];
+		int const laser_idx = laser_section_idx * n + laser_offset;
+		return lasers[laser_idx];
 	}
 
 	unsigned int laser(int row, int col) const
 	{
 		auto [laser_section_idx, laser_offset] = get_laser_section_and_offset(row, col);
-		return lasers[laser_section_idx * n + laser_offset];
+		int const laser_idx = laser_section_idx * n + laser_offset;
+		return lasers[laser_idx];
 	}
 
 	unsigned int & laser(Pos const & pos)
@@ -196,6 +242,9 @@ private:
 	// bottom: row==n, col in [0; n-1]
 	// left: col==-1, row in [0; n-1]
 	std::unique_ptr<unsigned int[]> lasers;
+
+	// 4 * n numbers, one per laser
+	std::unique_ptr<bool[]> laser_has_path;
 };
 
 std::ostream & operator<<(std::ostream & out, Board const & board)
@@ -210,45 +259,45 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	// go over top lasers
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = TopLaserSection * n + col;
+		int const laser_idx = UpDir * n + col;
 		std::ostringstream ostr;
-		if (board.get_lasers()[idx])
-			ostr << board.get_lasers()[idx];
-		lasers[idx] = ostr.str();
-		top_num_max_len = std::max(top_num_max_len, (int)lasers[idx].size());
+		if (board.get_lasers()[laser_idx])
+			ostr << board.get_lasers()[laser_idx];
+		lasers[laser_idx] = ostr.str();
+		top_num_max_len = std::max(top_num_max_len, (int)lasers[laser_idx].size());
 	}
 
 	// go over right lasers
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = RightLaserSection * n + row;
+		int const laser_idx = RightDir * n + row;
 		std::ostringstream ostr;
-		if (board.get_lasers()[idx])
-			ostr << board.get_lasers()[idx];
-		lasers[idx] = ostr.str();
-		right_num_max_len = std::max(right_num_max_len, (int)lasers[idx].size());
+		if (board.get_lasers()[laser_idx])
+			ostr << board.get_lasers()[laser_idx];
+		lasers[laser_idx] = ostr.str();
+		right_num_max_len = std::max(right_num_max_len, (int)lasers[laser_idx].size());
 	}
 
 	// go over bottom lasers
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = BottomLaserSection * n + col;
+		int const laser_idx = DownDir * n + col;
 		std::ostringstream ostr;
-		if (board.get_lasers()[idx])
-			ostr << board.get_lasers()[idx];
-		lasers[idx] = ostr.str();
-		bottom_num_max_len = std::max(bottom_num_max_len, (int)lasers[idx].size());
+		if (board.get_lasers()[laser_idx])
+			ostr << board.get_lasers()[laser_idx];
+		lasers[laser_idx] = ostr.str();
+		bottom_num_max_len = std::max(bottom_num_max_len, (int)lasers[laser_idx].size());
 	}
 
 	// go over left lasers
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = LeftLaserSection * n + row;
+		int const laser_idx = LeftDir * n + row;
 		std::ostringstream ostr;
-		if (board.get_lasers()[idx])
-			ostr << board.get_lasers()[idx];
-		lasers[idx] = ostr.str();
-		left_num_max_len = std::max(left_num_max_len, (int)lasers[idx].size());
+		if (board.get_lasers()[laser_idx])
+			ostr << board.get_lasers()[laser_idx];
+		lasers[laser_idx] = ostr.str();
+		left_num_max_len = std::max(left_num_max_len, (int)lasers[laser_idx].size());
 	}
 
 	// begin printing board
@@ -264,13 +313,13 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 		for (int col = 0; col < n; ++col)
 		{
 			out << ' '; // column separator
-			int idx = TopLaserSection * n + col;
-			int leading_spaces = top_num_max_len - (int)lasers[idx].size();
+			int const laser_idx = UpDir * n + col;
+			int leading_spaces = top_num_max_len - (int)lasers[laser_idx].size();
 			// print actual digit or space
 			if (i < leading_spaces)
 				out << ' ';
 			else
-				out << lasers[idx][i - leading_spaces];
+				out << lasers[laser_idx][i - leading_spaces];
 		}
 
 		out << '\n';
@@ -281,11 +330,11 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 	{
 		// line starts with left laser's number
 		{
-			int idx = LeftLaserSection * n + row;
-			int leading_spaces = left_num_max_len - (int)lasers[idx].size();
+			int const laser_idx = LeftDir * n + row;
+			int leading_spaces = left_num_max_len - (int)lasers[laser_idx].size();
 			for (int c = 0; c < leading_spaces; ++c)
 				out << ' ';
-			out << lasers[idx];
+			out << lasers[laser_idx];
 		}
 
 		// for each column: print cell's contents
@@ -296,7 +345,7 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 			switch (cell)
 			{
 			case CellType::Empty:
-				out << '*';
+				out << ' ';
 				break;
 			case CellType::ForwardMirror:
 				out << '/';
@@ -304,14 +353,17 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 			case CellType::BackwardMirror:
 				out << '\\';
 				break;
+			case CellType::LaserBeam:
+				out << '*';
+				break;
 			}
 		}
 		out << ' '; // column separator
 
 		// line ends with right laser's number
 		{
-			int idx = RightLaserSection * n + row;
-			out << lasers[idx];
+			int const laser_idx = RightDir * n + row;
+			out << lasers[laser_idx];
 		}
 
 		out << '\n';
@@ -328,9 +380,9 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 		for (int col = 0; col < n; ++col)
 		{
 			out << ' '; // column separator
-			int idx = BottomLaserSection * n + col;
-			if (i < (int)lasers[idx].size())
-				out << lasers[idx][i];
+			int const laser_idx = DownDir * n + col;
+			if (i < (int)lasers[laser_idx].size())
+				out << lasers[laser_idx][i];
 			else
 				out << ' ';
 		}
@@ -346,40 +398,249 @@ class LaserPathsVisitor
 public:
 	// When called, a full path from start to some other laser is applied. The end laser has its number updated.
 	// return value: true if visiting should be continued
-	using Callback = std::function<bool(Board const &, unsigned int path_product)>;
+	using Callback = std::function<bool(unsigned int path_product)>;
 
-	LaserPathsVisitor(Board const & board, Callback const & callback, int laser_section_idx, int laser_offset):
+	LaserPathsVisitor(Board & board, int start_laser_section_idx, int start_laser_offset, Callback const & callback):
 		board(board),
-		callback(callback)
+		callback(callback),
+		start_pos(board.laser_section_and_offset_to_pos(start_laser_section_idx, start_laser_offset))
 	{
-		Pos const start_pos = board.laser_section_and_offset_to_pos(laser_section_idx, laser_offset);
-		Pos const start_dir = laser_section_idx_to_start_dir[laser_section_idx];
+		Direction const start_dir = opposite_direction(Direction(start_laser_section_idx));
+
+		int const start_laser_idx = start_laser_section_idx * n + start_laser_offset;
+
+		// with start_pos (laser) marked as "has path", do recursive visiting
+		assert(!board.get_laser_has_path()[start_laser_idx]);
+		board.get_laser_has_path()[start_laser_idx] = true;
 		rec_visit(start_pos, start_dir, 1, board.laser(start_pos));
+		board.get_laser_has_path()[start_laser_idx] = false;
 	}
 
 private:
 	// path_product: product of segment lengths already on path
 	// needed_product: if non-zero then remaining segments' product must be equal to it
-	bool rec_visit(Pos const cur_pos, Pos const cur_dir, unsigned int path_product, unsigned int needed_product)
+	bool rec_visit(Pos const cur_pos, Direction const cur_dir, unsigned int path_product, unsigned int needed_product)
 	{
+		// try increasing segment lengths, until we hit a laser or a mirror
 		bool cont = true;
 		for (int segment_length = 1; cont; ++segment_length)
 		{
-			// TODO:
-			// 1. end_pos = cur_pos + cur_dir * segment_length.
-			// 2. if end_pos is a laser or if it contains a mirror: cont = false.
-			// 3. if segment_length divides needed_product:
-			//   3.1. if end_pos is a laser and laser num matches: with laser num updated { callback() }
-			//     3.1. if callback returned false then return false
-			//   3.2. else (end_pos is not a laser) then: for each matching mirror setting:
-			//     3.2.1 with mirror updated { rec_visit() }
-			//       3.2.1.1 if rec_visit returned false then return false
+			Pos const end_pos = cur_pos + direction_to_vec[cur_dir] * segment_length;
+
+			if (!board.is_on_board(end_pos) || board.cell(end_pos) == CellType::ForwardMirror
+					|| board.cell(end_pos) == CellType::BackwardMirror)
+				cont = false; // segment cannot get any longer
+
+			if (needed_product % segment_length == 0)
+			{
+				// copy segment's row or column, so that we can mark it with LaserBeam and then restore it
+				CellType to_restore[n];
+				if (cur_dir == RightDir || cur_dir == LeftDir)
+				{
+					// copy row
+					for (int i = 0; i < n; ++i)
+						to_restore[i] = board.cell(cur_pos.row, i);
+					// mark laser segment with LaserBeam
+					int const left_col = std::min(cur_pos.col, end_pos.col);
+					int const right_col = std::max(cur_pos.col, end_pos.col);
+					for (int i = left_col + 1; i < right_col; ++i)
+						board.cell(cur_pos.row, i) = CellType::LaserBeam;
+				}
+				else
+				{
+					// copy column
+					for (int i = 0; i < n; ++i)
+						to_restore[i] = board.cell(i, cur_pos.col);
+					// mark laser segment with LaserBeam
+					int const up_row = std::min(cur_pos.row, end_pos.row);
+					int const down_row = std::max(cur_pos.row, end_pos.row);
+					for (int i = up_row + 1; i < down_row; ++i)
+						board.cell(i, cur_pos.col) = CellType::LaserBeam;
+				}
+
+				bool visit_more = true;
+				do // fake loop for visit_more (in case we need a break)
+				{
+					unsigned int new_needed_product = needed_product / segment_length;
+					unsigned int new_path_product = path_product * segment_length;
+					if (!board.is_on_board(end_pos))
+					{
+						// end_pos is a laser
+						auto [end_laser_section_idx, end_laser_offset] = board.get_laser_section_and_offset(end_pos);
+						int const end_laser_idx = end_laser_section_idx * n + end_laser_offset;
+
+						unsigned int const end_laser_num = board.get_lasers()[end_laser_idx];
+						if (new_needed_product <= 1 && (end_laser_num == 0 || end_laser_num == new_path_product))
+						{
+							board.get_lasers()[end_laser_idx] = new_path_product;
+							assert(!board.get_laser_has_path()[end_laser_idx]);
+							board.get_laser_has_path()[end_laser_idx] = true;
+							unsigned int const start_laser_num = board.laser(start_pos);
+							board.laser(start_pos) = new_path_product;
+
+							visit_more = callback(new_path_product);
+
+							board.laser(start_pos) = start_laser_num;
+							board.get_laser_has_path()[end_laser_idx] = false;
+							board.get_lasers()[end_laser_idx] = end_laser_num;
+						}
+					}
+					else
+					{
+						// end_pos is on board
+						CellType const end_pos_type = board.cell(end_pos);
+						// We cannot put a mirror on a cell that has a laser beam!
+						if (end_pos_type != CellType::LaserBeam)
+						{
+							// adjacent cells cannot have a mirror
+							bool found_adjacent_mirror = false;
+							for (Pos const dir : all_dirs)
+							{
+								Pos const neighbor = end_pos + dir;
+								if (board.is_on_board(neighbor) && (board.cell(neighbor) == CellType::ForwardMirror
+											|| board.cell(neighbor) == CellType::BackwardMirror))
+								{
+									found_adjacent_mirror = true;
+									break;
+								}
+							}
+							if (!found_adjacent_mirror)
+							{
+								for (CellType new_mirror : {CellType::ForwardMirror, CellType::BackwardMirror})
+								{
+									if (end_pos_type == CellType::Empty || end_pos_type == new_mirror)
+									{
+										board.cell(end_pos) = new_mirror;
+										Direction const new_dir = new_mirror == CellType::ForwardMirror ?
+											dir_after_forward_mirror[cur_dir] : dir_after_backward_mirror[cur_dir];
+										visit_more = rec_visit(end_pos, new_dir, new_path_product, new_needed_product);
+										board.cell(end_pos) = end_pos_type;
+
+										if (!visit_more)
+											break;
+									}
+								}
+							}
+						}
+					}
+				} while (0);
+
+				// restore to the point before we marked segment with LaserBeam
+				if (cur_dir == RightDir || cur_dir == LeftDir)
+				{
+					// restore row
+					for (int i = 0; i < n; ++i)
+						board.cell(cur_pos.row, i) = to_restore[i];
+				}
+				else
+				{
+					// restore column
+					for (int i = 0; i < n; ++i)
+						board.cell(i, cur_pos.col) = to_restore[i];
+				}
+
+				if (!visit_more)
+					return false;
+			} // if (needed_product % segment_length == 0)
+		}
+		return true;
+	}
+
+	Board & board;
+	Callback const callback;
+	Pos const start_pos;
+};
+
+class MirrorsSolver
+{
+public:
+	using Callback = std::function<void(Board const &)>;
+
+	MirrorsSolver(Board const & board, Callback const & callback):
+		board(board),
+		callback(callback)
+	{
+		rec_solve();
+	}
+
+private:
+	void rec_solve()
+	{
+		unsigned int min_count_possible_paths = std::numeric_limits<unsigned int>::max();
+		int best_laser_section_idx, best_laser_offset;
+
+		// Two rounds here, going over lasers without a path.
+		// First off, go over lasers with non-zero hint (as they are likely to have lower possible paths count).
+		for (int hint_non_zero = 1; hint_non_zero >= 0; --hint_non_zero)
+		{
+			for (int laser_section_idx = 0; laser_section_idx < 4; ++laser_section_idx)
+			{
+				for (int laser_offset = 0; laser_offset < n; ++laser_offset)
+				{
+					int const laser_idx = laser_section_idx * n + laser_offset;
+					if (!board.get_laser_has_path()[laser_idx] && hint_non_zero == !!board.get_lasers()[laser_idx])
+					{
+						unsigned int count = 0;
+						LaserPathsVisitor visitor(board, laser_section_idx, laser_offset,
+								[&](unsigned int /*path_product*/)
+								{
+									++count;
+									return count < min_count_possible_paths;
+								});
+						if (count < min_count_possible_paths)
+						{
+							min_count_possible_paths = count;
+							best_laser_section_idx = laser_section_idx;
+							best_laser_offset = laser_offset;
+						}
+					}
+				}
+			}
+		}
+
+		if (min_count_possible_paths == std::numeric_limits<unsigned int>::max())
+		{
+			// All lasers have a path.
+			callback(board);
+		}
+		else
+		{
+			// Recursively try all paths from the selected laser (with the lowest count of possible paths).
+			LaserPathsVisitor visitor(board, best_laser_section_idx, best_laser_offset,
+					[this](unsigned int /*path_product*/)
+					{
+						rec_solve();
+						return true;
+					});
 		}
 	}
 
 	Board board;
 	Callback const callback;
 };
+
+void print_answer(Board const & orig_board, Board const & solved_board)
+{
+	std::cout << "\nFound solution:\n" << solved_board << std::flush;
+
+	unsigned long long prod = 1;
+	for (int laser_section_idx = 0; laser_section_idx < 4; ++laser_section_idx)
+	{
+		unsigned int sum = 0;
+		for (int laser_offset = 0; laser_offset < n; ++laser_offset)
+		{
+			int const laser_idx = laser_section_idx * n + laser_offset;
+			if (orig_board.get_lasers()[laser_idx] == 0)
+			{
+				sum += solved_board.get_lasers()[laser_idx];
+			}
+		}
+		std::cout << "side sum: " << sum << '\n';
+		prod *= sum;
+	}
+
+	std::cout << "final answer: " << prod << std::endl;
+}
 
 int main()
 {
@@ -398,34 +659,40 @@ int main()
 	std::cout << "Enter numbers of top lasers: ";
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = TopLaserSection * n + col;
-		std::cin >> board.get_lasers()[idx];
+		int const laser_idx = UpDir * n + col;
+		std::cin >> board.get_lasers()[laser_idx];
 	}
 
 	// go over right lasers
 	std::cout << "Enter numbers of right lasers: ";
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = RightLaserSection * n + row;
-		std::cin >> board.get_lasers()[idx];
+		int const laser_idx = RightDir * n + row;
+		std::cin >> board.get_lasers()[laser_idx];
 	}
 
 	// go over bottom lasers
 	std::cout << "Enter numbers of bottom lasers: ";
 	for (int col = 0; col < n; ++col)
 	{
-		int idx = BottomLaserSection * n + col;
-		std::cin >> board.get_lasers()[idx];
+		int const laser_idx = DownDir * n + col;
+		std::cin >> board.get_lasers()[laser_idx];
 	}
 
 	// go over left lasers
 	std::cout << "Enter numbers of left lasers: ";
 	for (int row = 0; row < n; ++row)
 	{
-		int idx = LeftLaserSection * n + row;
-		std::cin >> board.get_lasers()[idx];
+		int const laser_idx = LeftDir * n + row;
+		std::cin >> board.get_lasers()[laser_idx];
 	}
 
 	std::cout << "Board:\n" << board;
 	std::cout << "Solving..." << std::endl;
+
+	MirrorsSolver solver(board,
+			[&](Board const & solved_board)
+			{
+				print_answer(board, solved_board);
+			});
 }

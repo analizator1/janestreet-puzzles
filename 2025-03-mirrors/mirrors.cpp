@@ -5,8 +5,37 @@
 #include <string>
 #include <algorithm>
 #include <sstream>
+#include <functional>
 
 static constexpr int n = 10; // side of field
+
+struct Pos
+{
+	int row;
+	int col;
+};
+
+Pos operator+(Pos const & a, Pos const & b)
+{
+	return {a.row + b.row, a.col + b.col};
+}
+
+Pos operator*(Pos const & self, int factor)
+{
+	return {self.row * factor, self.col * factor};
+}
+
+std::ostream & operator<<(std::ostream & out, Pos const & self)
+{
+	return out << '{' << self.row << ", " << self.col << '}';
+}
+
+static Pos const dir_up    = {-1, 0};
+static Pos const dir_right = {0, 1};
+static Pos const dir_down  = {1, 0};
+static Pos const dir_left  = {0, -1};
+
+static Pos const all_dirs[4] = {dir_up, dir_right, dir_down, dir_left};
 
 enum class CellType: uint8_t
 {
@@ -23,6 +52,13 @@ enum LaserSectionIdx
 	LeftLaserSection
 };
 
+static Pos const laser_section_idx_to_start_dir[4] = {
+	dir_down, // TopLaserSection
+	dir_left, // RightLaserSection
+	dir_up,   // BottomLaserSection
+	dir_right // LeftLaserSection
+};
+
 class Board
 {
 public:
@@ -31,6 +67,14 @@ public:
 		lasers(new unsigned int[4 * n]{})
 	{
 		std::cout << "Created board with side " << n << std::endl;
+	}
+
+	Board(Board const & other):
+		cells(new CellType[n * n]),
+		lasers(new unsigned int[4 * n])
+	{
+		std::copy(&other.cells[0], &other.cells[n * n], &this->cells[0]);
+		std::copy(&other.lasers[0], &other.lasers[4 * n], &this->lasers[0]);
 	}
 
 	CellType & cell(int row, int col)
@@ -45,6 +89,16 @@ public:
 		return cells[row * n + col];
 	}
 
+	CellType & cell(Pos const & pos)
+	{
+		return cell(pos.row, pos.col);
+	}
+
+	CellType cell(Pos const & pos) const
+	{
+		return cell(pos.row, pos.col);
+	}
+
 	unsigned int * get_lasers() const
 	{
 		return lasers.get();
@@ -55,53 +109,85 @@ public:
 		return (row >= 0 && row < n) && (col >= 0 && col < n);
 	}
 
+	bool is_on_board(Pos const & pos) const
+	{
+		return is_on_board(pos.row, pos.col);
+	}
+
 	std::pair<int, int> get_laser_section_and_offset(int row, int col) const
 	{
 		int laser_section_idx = -1;
-		int offset = -1;
+		int laser_offset = -1;
 
 		if (row == -1) // top
 		{
 			laser_section_idx = TopLaserSection;
-			offset = col;
+			laser_offset = col;
 		}
 		else if (col == n) // right
 		{
 			laser_section_idx = RightLaserSection;
-			offset = row;
+			laser_offset = row;
 		}
 		else if (row == n) // bottom
 		{
 			laser_section_idx = BottomLaserSection;
-			offset = col;
+			laser_offset = col;
 		}
 		else if (col == -1) // left
 		{
 			laser_section_idx = LeftLaserSection;
-			offset = row;
+			laser_offset = row;
 		}
 
 		assert(laser_section_idx >= 0 && laser_section_idx < 4);
-		assert(offset >= 0 && offset < n);
-		return {laser_section_idx, offset};
+		assert(laser_offset >= 0 && laser_offset < n);
+		return {laser_section_idx, laser_offset};
+	}
+
+	Pos laser_section_and_offset_to_pos(int laser_section_idx, int laser_offset) const
+	{
+		switch (laser_section_idx)
+		{
+		case TopLaserSection:
+			return {-1, laser_offset};
+		case RightLaserSection:
+			return {laser_offset, n};
+		case BottomLaserSection:
+			return {n, laser_offset};
+		case LeftLaserSection:
+			return {laser_offset, -1};
+		}
+		assert(false);
 	}
 
 	unsigned int & laser(int row, int col)
 	{
-		auto [laser_section_idx, offset] = get_laser_section_and_offset(row, col);
-		return lasers[laser_section_idx * n + offset];
+		auto [laser_section_idx, laser_offset] = get_laser_section_and_offset(row, col);
+		return lasers[laser_section_idx * n + laser_offset];
 	}
 
 	unsigned int laser(int row, int col) const
 	{
-		auto [laser_section_idx, offset] = get_laser_section_and_offset(row, col);
-		return lasers[laser_section_idx * n + offset];
+		auto [laser_section_idx, laser_offset] = get_laser_section_and_offset(row, col);
+		return lasers[laser_section_idx * n + laser_offset];
+	}
+
+	unsigned int & laser(Pos const & pos)
+	{
+		return laser(pos.row, pos.col);
+	}
+
+	unsigned int laser(Pos const & pos) const
+	{
+		return laser(pos.row, pos.col);
 	}
 
 private:
 	// n * n board
 	// rows and cols are in [0; n-1] range
 	std::unique_ptr<CellType[]> cells;
+
 	// 4 * n numbers, one per laser
 	// each number is a product of the segment lengths of a laser's path or 0 if unknown
 	// these are cells adjacent to board:
@@ -254,6 +340,46 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 
 	return out;
 }
+
+class LaserPathsVisitor
+{
+public:
+	// When called, a full path from start to some other laser is applied. The end laser has its number updated.
+	// return value: true if visiting should be continued
+	using Callback = std::function<bool(Board const &, unsigned int path_product)>;
+
+	LaserPathsVisitor(Board const & board, Callback const & callback, int laser_section_idx, int laser_offset):
+		board(board),
+		callback(callback)
+	{
+		Pos const start_pos = board.laser_section_and_offset_to_pos(laser_section_idx, laser_offset);
+		Pos const start_dir = laser_section_idx_to_start_dir[laser_section_idx];
+		rec_visit(start_pos, start_dir, 1, board.laser(start_pos));
+	}
+
+private:
+	// path_product: product of segment lengths already on path
+	// needed_product: if non-zero then remaining segments' product must be equal to it
+	bool rec_visit(Pos const cur_pos, Pos const cur_dir, unsigned int path_product, unsigned int needed_product)
+	{
+		bool cont = true;
+		for (int segment_length = 1; cont; ++segment_length)
+		{
+			// TODO:
+			// 1. end_pos = cur_pos + cur_dir * segment_length.
+			// 2. if end_pos is a laser or if it contains a mirror: cont = false.
+			// 3. if segment_length divides needed_product:
+			//   3.1. if end_pos is a laser and laser num matches: with laser num updated { callback() }
+			//     3.1. if callback returned false then return false
+			//   3.2. else (end_pos is not a laser) then: for each matching mirror setting:
+			//     3.2.1 with mirror updated { rec_visit() }
+			//       3.2.1.1 if rec_visit returned false then return false
+		}
+	}
+
+	Board board;
+	Callback const callback;
+};
 
 int main()
 {

@@ -1,0 +1,48 @@
+/* vim:filetype=maxima:et:
+ */
+
+/* p - probability that label is 0 */
+/* P(A): probability that there exists an infinite path that sums to 0 */
+/* P(A) = P(0 at root) * P(path with 0 sum at left child OR path with 0 sum at right child) */
+A = p * (1 - (1-A)^2);
+a_sol: solve(%, A);
+/* P(B): probability that there exists an infinite path with sum <= 1 */
+/* P(B) = P(root==0)*P(B|root==0) + P(root==1)*P(B|root==1) */
+/* P(B) = p * P(B at left child OR B at right child) + (1-p) * P(A at left child OR A at right child) */
+B = p * (1 - (1-B)^2) + (1-p) * (1 - (1-A)^2);
+eq: %, a_sol[1];
+declare(p, mainvar);
+lhs(eq)-rhs(eq), ratsimp;
+
+(lhs(eq)-rhs(eq)), B=1/2, ratsimp;
+(lhs(eq)-rhs(eq))*4*p^2, B=1/2, ratsimp;
+f(p) := ''%;
+plot2d(f(p), [p, 0, 1]);
+
+f(n/10^10);
+f(n/10^10)*10^30, ratsimp;
+g(n) := ''%;
+
+pred: g(c) >= 0;
+prederror: true;
+is(ev(pred, c:0.5*10^10));
+is(ev(pred, c:0.6*10^10));
+/* The answer is p=c/10^10 for the last c such that pred is true.
+We will do a binary search. In each step, we search in interval [a; b) such that:
+* pred is true for every c<a
+* pred is false for every c>=b */
+last_true: block([a:1, b:10^10, c],
+    while a < b do (c:floor((a+b)/2), if ev(pred) then a:c+1 else b:c),
+    /* we have a==b and so the last c where pred is true is a-1 */
+    a-1
+);
+
+/* Check answer */
+is(last_true=5306035754);
+is(ev(pred, c:last_true));
+is(ev(pred, c:last_true+1));
+slength(string(last_true));
+/* This is p accurate to 10 decimal places. f(p) should still be positive. */
+f(0.5306035754);
+/* Starting here f(p) becomes negative. */
+f(0.5306035755);

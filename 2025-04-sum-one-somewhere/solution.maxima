@@ -14,15 +14,19 @@ eq: %, a_sol[1];
 declare(p, mainvar);
 lhs(eq)-rhs(eq), ratsimp;
 
+/* f(p) is the polynomial and its root is the solution. */
 (lhs(eq)-rhs(eq)), B=1/2, ratsimp;
 (lhs(eq)-rhs(eq))*4*p^2, B=1/2, ratsimp;
 f(p) := ''%;
 plot2d(f(p), [p, 0, 1]);
 
+/* We can find f(p) root by evaluating g(n) at integers in range (0; 10^10).
+Both functions are monotonically decreasing. */
 f(n/10^10);
 f(n/10^10)*10^30, ratsimp;
 g(n) := ''%;
 
+/* Helper predicate */
 pred: g(c) >= 0;
 prederror: true;
 is(ev(pred, c:0.5*10^10));
@@ -46,3 +50,6 @@ slength(string(last_true));
 f(0.5306035754);
 /* Starting here f(p) becomes negative. */
 f(0.5306035755);
+
+/* Alternative way to find f(p) root. */
+realroots(f(p), 1e-11), numer;

@@ -7,3 +7,4 @@ add_compile_options(-Wall -Wextra -Wvla -Winit-self -Wnon-virtual-dtor -Woverloa
 
 add_subdirectory(2025-01-sudoku)
 add_subdirectory(2025-03-mirrors)
+add_subdirectory(2025-05-number-cross5)

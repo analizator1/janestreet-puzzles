@@ -1,0 +1,26 @@
+# num_rows, num_cols
+5 5
+
+# num regions
+3
+
+# num_rows rows: each starting with row index, then num_cols indices of regions
+0  0 0 0 0 0
+1  1 0 0 0 0
+2  1 1 0 0 0
+3  2 1 1 0 0
+4  2 2 1 1 0
+
+# num_rows rows: each starting with row index, then num_cols times 1 (cell highlighted) or 0 (not highlighted)
+0  1 1 0 0 0
+1  1 0 0 0 0
+2  0 0 0 0 0
+3  0 0 0 0 1
+4  0 0 0 1 1
+
+# num_rows rows: each with row's hint and a single argument (int)
+0 multiple 11
+1 multiple 14
+2 multiple 28
+3 multiple 101
+4 multiple 2025

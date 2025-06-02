@@ -22,7 +22,7 @@
 #define DBG(expr) do {} while (0)
 #endif
 
-#if 1
+#if 0
 // DBG2 logging enabled
 #define DBG2(expr) expr
 #else
@@ -35,6 +35,8 @@
 #else
 #define DBG3(expr) do {} while (0)
 #endif
+
+using namespace std::placeholders;
 
 struct Pos
 {
@@ -661,41 +663,54 @@ private:
 class DisplaceTilesValue
 {
 public:
-	// Callback is called when for each tile in source_row, part of (or whole) its value is displaced to a cell in
-	// target_row. source_row is either the same as target_row or they are adjacent.
+	// Callback is called when for each tile in rows in [current_row-1; current_row+1], part of (or whole) its value is
+	// displaced to a cell in target_row.
 	// return value: true if visiting should be continued
 	using Callback = std::function<bool()>;
 
-	DisplaceTilesValue(Board & board, int source_row, int target_row, Callback const & callback):
+	// Called often to check if constraints are satisfied, but numbers are only valid until first_not_done_col.
+	using ConstraintsCallback = std::function<bool(int first_not_done_col)>;
+
+	DisplaceTilesValue(Board & board, int target_row, Callback const & continuation_callback,
+			ConstraintsCallback const & constraints_callback):
 		board(board),
-		callback(callback),
-		source_row(source_row),
+		continuation_callback(continuation_callback),
+		constraints_callback(constraints_callback),
 		target_row(target_row),
-		displacements(),
-		source_tiles(board.get_row_tiles(source_row))
+		displacements()
 	{
 	}
 
 	// return value: true if visiting should be continued
 	bool run()
 	{
-		for (int source_tile_idx = 0; source_tile_idx < (int)source_tiles.size(); ++source_tile_idx)
+		for (int source_row = target_row - 1; source_row <= target_row + 1; ++source_row)
 		{
-			Board::Tile const & tile = source_tiles[source_tile_idx];
-			Pos const tile_pos {source_row, tile.col};
-			for (int i = 0; i < 4; ++i)
+			if (source_row < 0 || source_row >= board.num_rows)
+				continue;
+			std::vector<Board::Tile> const & source_tiles = board.get_row_tiles(source_row);
+			for (int source_tile_idx = 0; source_tile_idx < (int)source_tiles.size(); ++source_tile_idx)
 			{
-				if (tile.cells_for_displacement[i])
+				Board::Tile const & tile = source_tiles[source_tile_idx];
+				Pos const tile_pos {source_row, tile.col};
+				for (int i = 0; i < 4; ++i)
 				{
-					Pos const vec = orthogonal_dirs[i];
-					Pos const pos_for_displacement = tile_pos + vec;
-					if (pos_for_displacement.row == target_row)
+					if (tile.cells_for_displacement[i])
 					{
-						displacements.push_back({(int8_t)source_tile_idx, (int8_t)i});
+						Pos const vec = orthogonal_dirs[i];
+						Pos const pos_for_displacement = tile_pos + vec;
+						if (pos_for_displacement.row == target_row)
+						{
+							displacements.push_back({(int8_t)pos_for_displacement.col, (int8_t)source_row,
+									(int8_t)source_tile_idx, (int8_t)i});
+						}
 					}
 				}
 			}
 		}
+
+		// sort by column of displacement in target_row, needed by constraints_callback
+		std::sort(displacements.begin(), displacements.end());
 
 		return rec_displace(0);
 	}
@@ -703,8 +718,15 @@ public:
 private:
 	struct Displacement
 	{
+		int8_t pos_for_displacement_col;
+		int8_t source_row;
 		int8_t source_tile_idx;
 		int8_t cells_for_displacement_idx;
+
+		bool operator<(Displacement const & other) const
+		{
+			return pos_for_displacement_col < other.pos_for_displacement_col;
+		}
 	};
 
 	bool rec_displace(int const displacement_idx)
@@ -712,12 +734,23 @@ private:
 		if (displacement_idx >= (int)displacements.size())
 		{
 			// we have a proper displacement
-			bool const visit_more = callback();
+			bool const visit_more = continuation_callback();
 			return visit_more;
 		}
 		else
 		{
+			{
+				int const first_not_done_col = displacements[displacement_idx].pos_for_displacement_col;
+				if (!constraints_callback(first_not_done_col))
+				{
+					// prune this search branch early
+					return true;
+				}
+			}
+
 			int const source_tile_idx = displacements[displacement_idx].source_tile_idx;
+			int const source_row = displacements[displacement_idx].source_row;
+			std::vector<Board::Tile> & source_tiles = board.get_row_tiles(source_row);
 			Board::Tile & tile = source_tiles[source_tile_idx];
 			Pos const tile_pos {source_row, tile.col};
 			int const i = displacements[displacement_idx].cells_for_displacement_idx;
@@ -758,11 +791,10 @@ private:
 	}
 
 	Board & board;
-	Callback const callback;
-	int const source_row;
+	Callback const continuation_callback;
+	ConstraintsCallback const constraints_callback;
 	int const target_row;
 	std::vector<Displacement> displacements;
-	std::vector<Board::Tile> & source_tiles;
 };
 
 class RowProcessor
@@ -852,7 +884,7 @@ private:
 		else
 		{
 			// all rows in [current_row-1; current_row+1] have tiles placement
-			return perform_displacements_to_current_row(current_row - 1);
+			return perform_displacements_to_current_row();
 		}
 	}
 
@@ -863,38 +895,17 @@ private:
 		return visit_more;
 	}
 
-	bool perform_displacements_to_current_row(int const source_row)
+	bool perform_displacements_to_current_row()
 	{
-		if (source_row <= current_row + 1)
-		{
-			if (source_row < 0 || source_row >= board.num_rows)
-			{
-				return perform_displacements_to_current_row(source_row + 1);
-			}
-
-			// perform tiles displacements from source_row to current_row
-			DisplaceTilesValue work(board, source_row, current_row,
-					std::bind(&RowProcessor::done_displacements_to_current_row, this, source_row));
-			bool const visit_more = work.run();
-			return visit_more;
-		}
-		else
-		{
-			// all source rows in [current_row-1; current_row+1] did displacements to current_row
-			return check_row_hints_and_call_back();
-		}
-	}
-
-	bool done_displacements_to_current_row(int const source_row)
-	{
-		// proceed to next row
-		bool const visit_more = perform_displacements_to_current_row(source_row + 1);
+		DisplaceTilesValue work(board, current_row,
+				std::bind(&RowProcessor::check_row_hints_and_call_back, this),
+				std::bind(&RowProcessor::constraints_callback, this, _1));
+		bool const visit_more = work.run();
 		return visit_more;
 	}
 
-	bool check_row_hints_and_call_back()
+	bool check_row_hints(std::vector<uint64_t> & added_numbers, int first_not_done_col)
 	{
-		std::vector<uint64_t> added_numbers;
 		std::vector<Board::Tile> const & tiles = board.get_row_tiles(current_row);
 		bool is_ok = true;
 
@@ -905,6 +916,12 @@ private:
 			// consider number ending at current tile (it)
 			int const start_col = it == tiles.begin() ? 0 : (it - 1)->col + 1;
 			int const end_col = it == tiles.end() ? board.num_cols : it->col;
+			if (end_col > first_not_done_col)
+			{
+				// number is not fixed yet (displacements not done)
+				break;
+			}
+			// number is fixed, check it
 			if (start_col < end_col)
 			{
 				uint64_t number = 0;
@@ -934,6 +951,28 @@ private:
 				break;
 			++it;
 		}
+
+		return is_ok;
+	}
+
+	bool constraints_callback(int first_not_done_col)
+	{
+		std::vector<uint64_t> added_numbers;
+		bool const is_ok = check_row_hints(added_numbers, first_not_done_col);
+
+		for (uint64_t number : added_numbers)
+		{
+			int const num_erased = board.numbers_in_grid.erase(number);
+			assert(num_erased == 1);
+		}
+
+		return is_ok;
+	}
+
+	bool check_row_hints_and_call_back()
+	{
+		std::vector<uint64_t> added_numbers;
+		bool const is_ok = check_row_hints(added_numbers, board.num_cols);
 
 		bool visit_more = true;
 		if (is_ok)
@@ -1005,8 +1044,8 @@ private:
 				}
 				int order_val = regions_without_value.count();
 				// HACK
-				if (board.get_row_hints_fun(row) == is_fibonacci)
-					order_val = -1;
+				//if (board.get_row_hints_fun(row) == is_fibonacci)
+				//	order_val = -1;
 				rows_to_check.emplace_back(order_val, row);
 			}
 		}

@@ -1086,6 +1086,9 @@ private:
 				<< " best_row_degree: " << best_row_degree
 				<< " best_row: " << best_row
 				<< std::endl);
+
+			if (best_row_degree == 0)
+				break;
 		}
 
 		DBG(std::cout << __func__
@@ -1098,7 +1101,7 @@ private:
 			// all rows were processed
 			callback();
 		}
-		else
+		else if (best_row_degree > 0)
 		{
 			// process best row, calling us recursively
 			assert(!board.get_row_is_processed(best_row));

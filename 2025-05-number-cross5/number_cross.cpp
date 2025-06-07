@@ -586,24 +586,28 @@ public:
 	}
 
 private:
-	// It tries to place exactly remaining_tiles tiles starting from col.
-	// We assume that the col argument took into account min_number_len.
-	bool try_placing_tiles(int col, int remaining_tiles)
+	// It tries to place exactly remaining_tiles tiles, assuming that current number starts at start_col.
+	bool try_placing_tiles(int const start_col, int remaining_tiles)
 	{
 		if (remaining_tiles == 0)
 		{
-			// we have a proper placement
-			bool const visit_more = callback();
-			return visit_more;
+			// we placed all tiles, but the last numer's length needs to be checked
+			int const number_len = board.num_cols - start_col;
+			if (number_len >= min_number_len || number_len == 0)
+			{
+				bool const visit_more = callback();
+				return visit_more;
+			}
 		}
 		else
 		{
 			assert(remaining_tiles > 0);
-			// try different columns
-			for (; col < board.num_cols; ++col)
+			// we need to place a tile
+			for (int end_col = start_col; end_col < board.num_cols; ++end_col)
 			{
-				// can we place it here?
-				if (!board.get_cell_is_highlighted({row, col}))
+				int const number_len = end_col - start_col;
+				if ((number_len >= min_number_len || (number_len == 0 && end_col == 0))
+						&& !board.get_cell_is_highlighted({row, end_col}))
 				{
 					// check tiles in adjacent rows
 					bool is_ok = true;
@@ -614,7 +618,7 @@ private:
 							// is there a tile in {adjacent_row, col}?
 							std::vector<Board::Tile> const & adjacent_tiles = board.get_row_tiles(adjacent_row);
 							auto it = std::find_if(adjacent_tiles.begin(), adjacent_tiles.end(),
-									[col](Board::Tile const & tile) { return tile.col == col; });
+									[end_col](Board::Tile const & tile) { return tile.col == end_col; });
 							if (it != adjacent_tiles.end())
 							{
 								is_ok = false;
@@ -627,7 +631,7 @@ private:
 						// we can place tile at {row, col}
 						// but only if cells_for_displacement set is not empty
 						std::bitset<4> cells_for_displacement;
-						Pos const tile_pos {row, col};
+						Pos const tile_pos {row, end_col};
 						for (int i = 0; i < 4; ++i)
 						{
 							Pos const vec = orthogonal_dirs[i];
@@ -642,8 +646,8 @@ private:
 						if (cells_for_displacement.any())
 						{
 							// this is a valid tile position
-							board.get_row_tiles(row).push_back({(int8_t)col, cells_for_displacement});
-							bool const visit_more = try_placing_tiles(col + 1 + min_number_len, remaining_tiles - 1);
+							board.get_row_tiles(row).push_back({(int8_t)end_col, cells_for_displacement});
+							bool const visit_more = try_placing_tiles(end_col + 1, remaining_tiles - 1);
 							board.get_row_tiles(row).pop_back();
 							if (!visit_more)
 								return false;
@@ -651,8 +655,8 @@ private:
 					}
 				}
 			}
-			return true;
 		}
+		return true;
 	}
 
 	Board & board;

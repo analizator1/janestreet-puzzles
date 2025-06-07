@@ -1034,23 +1034,28 @@ private:
 		// Prepare a vector of rows to check, in a heuristic order from the lowest branching degree.
 		std::vector<std::pair<int, int>> rows_to_check;
 		rows_to_check.reserve(board.num_rows);
-		for (int row = 0; row < board.num_rows; ++row)
+		for (int row_to_check = 0; row_to_check < board.num_rows; ++row_to_check)
 		{
-			if (!board.get_row_is_processed(row))
+			if (!board.get_row_is_processed(row_to_check))
 			{
-				// compute number of different regions that don't have their value set yet
+				// Compute number of different regions that don't have their value set yet. Check each row in
+				// [row_to_check-1; row_to_check+1].
 				std::bitset<max_num_regions> regions_without_value;
-				for (int col = 0; col < board.num_cols; ++col)
+				for (int row = row_to_check - 1; row <= row_to_check + 1; ++row)
 				{
-					int const region_idx = board.get_cell_region({row, col});
-					if (board.get_region_value(region_idx) == -1)
-						regions_without_value.set(region_idx);
+					if (row >= 0 && row < board.num_rows)
+					{
+						for (int col = 0; col < board.num_cols; ++col)
+						{
+							int const region_idx = board.get_cell_region({row, col});
+							if (board.get_region_value(region_idx) == -1)
+								regions_without_value.set(region_idx);
+						}
+					}
 				}
-				int order_val = regions_without_value.count();
-				// HACK
-				//if (board.get_row_hints_fun(row) == is_fibonacci)
-				//	order_val = -1;
-				rows_to_check.emplace_back(order_val, row);
+
+				int const order_val = regions_without_value.count();
+				rows_to_check.emplace_back(order_val, row_to_check);
 			}
 		}
 		std::sort(rows_to_check.begin(), rows_to_check.end());

@@ -31,7 +31,8 @@ class Square:
 	def __init__(self, color, row, col):
 		self.color = color
 		self.side = colorToSide(color)
-		self.topLeft = Point(row, col)  # relative to current board
+		self.topLeft = Point(row, col)  # relative to board
+		self.gridTopLeft = None  # top-left point relative to grid origin
 
 	def isCovering(self, point):
 		return (self.top() <= point.row <= self.bottom() and
@@ -56,6 +57,18 @@ class Square:
 
 	def bottom(self):
 		return self.topLeft.row + self.side - 1
+
+	def gridLeft(self):
+		return self.gridTopLeft.col
+
+	def gridTop(self):
+		return self.gridTopLeft.row
+
+	def gridRight(self):
+		return self.gridTopLeft.col + self.side - 1
+
+	def gridBottom(self):
+		return self.gridTopLeft.row + self.side - 1
 
 
 def colorToSide(color):
@@ -118,6 +131,11 @@ def squarePointToString(square, point):
 		ansiCode = colorToAnsiBasicCode(color)
 		return f"\33[{ansiCode}m{char}\33[0m"
 	return char
+
+
+def sorted_unique(iterable, key):
+	d = {key(item): item for item in iterable}
+	return sorted(d.values(), key=key)
 
 
 board00 = [
@@ -411,68 +429,288 @@ all_boards = [
 
 BOARD_SIZE = 45
 
+for r in range(3):
+	for c in range(3):
+		boardPos = Point(BOARD_SIZE * r, BOARD_SIZE * c)
+		for square in all_boards[r][c]:
+			square.gridTopLeft = square.topLeft + boardPos
+
+all_boards_list = [board for row in all_boards for board in row]
+all_squares_list = [square for board in all_boards_list for square in board]
+
+colorsSortedBySide = sorted(Color, key=colorToSide)
+
 parser = argparse.ArgumentParser(description="""Solution to Some Ones, Somewhere.""")
 parser.add_argument("--color", help="print raw ansi color sequences", action="store_true")
 
 args = parser.parse_args()
 
-for overallRow in range(3 * BOARD_SIZE):
-	r = overallRow // BOARD_SIZE
-	row = overallRow % BOARD_SIZE
 
-	if row == 0:
-		if r == 0:
-			# print top legend
-			for overallCol in range(3 * BOARD_SIZE):
-				c = overallCol // BOARD_SIZE
-				col = overallCol % BOARD_SIZE
+def printGrid():
+	for gridRow in range(3 * BOARD_SIZE):
+		r = gridRow // BOARD_SIZE
+		row = gridRow % BOARD_SIZE
 
+		if row == 0:
+			# print separator row (with column legend)
+			sys.stdout.write("   ")
+			for gridCol in range(3 * BOARD_SIZE):
+				c = gridCol // BOARD_SIZE
+				col = gridCol % BOARD_SIZE
+
+				# vertical separation
 				if col == 0:
-					if c == 0:
-						sys.stdout.write(" ")
-					else:
-						sys.stdout.write(" |")  # vertical separator
+					sys.stdout.write("  ")
 
-				colChr = chr(65 + overallCol % 26)
+				colChr = chr(65 + gridCol % 26)
 				sys.stdout.write(" " + colChr)
 			sys.stdout.write("\n")
-		else:
-			# print horizontal separator
-			for overallCol in range(3 * BOARD_SIZE):
-				c = overallCol // BOARD_SIZE
-				col = overallCol % BOARD_SIZE
 
-				if col == 0:
-					if c == 0:
-						sys.stdout.write(" ")
-					else:
-						sys.stdout.write("=|")  # vertical separator
+		# print real row
+		sys.stdout.write(f"{gridRow:3}")
+		for gridCol in range(3 * BOARD_SIZE):
+			c = gridCol // BOARD_SIZE
+			col = gridCol % BOARD_SIZE
+			point = Point(row, col)
 
-				sys.stdout.write("==")
-			sys.stdout.write("\n")
+			# vertical separation (with row legend)
+			if col == 0:
+				rowChr = chr(65 + gridRow % 26)
+				sys.stdout.write(" " + rowChr)
 
-	# print ordinary row
-	for overallCol in range(3 * BOARD_SIZE):
-		c = overallCol // BOARD_SIZE
-		col = overallCol % BOARD_SIZE
-		point = Point(row, col)
+			board = all_boards[r][c]
+			covering_squares = [square for square in board if square.isCovering(point)]
+			assert len(covering_squares) <= 1
 
-		if col == 0:
-			if c == 0:
-				# print left legend
-				rowChr = chr(65 + overallRow % 26)
-				sys.stdout.write(rowChr)
+			# print the color of covering square
+			if covering_squares:
+				square = covering_squares[0]
+				sys.stdout.write(" " + squarePointToString(square, point))
 			else:
-				sys.stdout.write(" |")  # vertical separator
+				sys.stdout.write("  ")
+		sys.stdout.write("\n")
 
-		board = all_boards[r][c]
-		covering_squares = [square for square in board if square.isCovering(point)]
-		assert len(covering_squares) <= 1
 
-		# print the color of covering square
-		if covering_squares:
-			square = covering_squares[0]
-			sys.stdout.write(" " + squarePointToString(square, point))
-		else:
-			sys.stdout.write("  ")
-	sys.stdout.write("\n")
+def printRowLettersFromSquares(printForLeft, printForRight, colorsToConsider):
+	print("\n=====")
+	print("printRowLettersFromSquares:", "printForLeft:", printForLeft, "printForRight:", printForRight,
+	   "colorsToConsider:", [color.name for color in colorsToConsider])
+	for gridRow in range(3 * BOARD_SIZE):
+		r = gridRow // BOARD_SIZE
+		row = gridRow % BOARD_SIZE
+
+		rowChr = chr(65 + gridRow % 26)
+		print("row", gridRow, rowChr, end=": ")
+		for gridCol in range(3 * BOARD_SIZE):
+			c = gridCol // BOARD_SIZE
+			col = gridCol % BOARD_SIZE
+			point = Point(row, col)
+
+			board = all_boards[r][c]
+			covering_squares = [square for square in board if square.isCovering(point)]
+			assert len(covering_squares) <= 1
+
+			if covering_squares:
+				square = covering_squares[0]
+				if printForLeft and col == square.left() and square.color in colorsToConsider:
+					print(chr(65 + square.gridLeft() % 26), end="")
+				if printForRight and col == square.right() and square.color in colorsToConsider:
+					print(chr(65 + square.gridRight() % 26), end="")
+
+		print()
+
+
+def printRowLettersFromSquaresForGrid():
+	for numSmallestColors in range(1, len(Color)+1):
+		colorsToConsider = colorsSortedBySide[:numSmallestColors]
+		printRowLettersFromSquares(True, True, colorsToConsider)
+		printRowLettersFromSquares(True, False, colorsToConsider)
+		printRowLettersFromSquares(False, True, colorsToConsider)
+
+
+def tryToDecodeSquares():
+	print("\n=== (top, left) numeric ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		for r in range(3):
+			for c in range(3):
+				squares = sorted([square for square in all_boards[r][c] if square.color == color], key=lambda square: (square.top(), square.left()))
+				print(f"board{r}{c} [{len(squares)} squares]:", end="")
+				for square in squares:
+					print(f" ({square.top()}, {square.left()})", end="")
+				print()
+
+	print("\n=== top ===")
+	# For each color: go over each board and print location of squares in this color as letters.
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		for r in range(3):
+			for c in range(3):
+				print(f"board{r}{c}: ", end="")
+				squares = sorted([square for square in all_boards[r][c] if square.color == color], key=lambda square: (square.top(), square.left()))
+				for square in squares:
+					print(chr(65 + square.gridTop() % 26), end="")
+				print()
+
+	print("\n=== left ===")
+	# For each color: go over each board and print location of squares in this color as letters.
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		for r in range(3):
+			for c in range(3):
+				print(f"board{r}{c}: ", end="")
+				# Note: sort by (left, top).
+				squares = sorted([square for square in all_boards[r][c] if square.color == color], key=lambda square: (square.left(), square.top()))
+				for square in squares:
+					print(chr(65 + square.gridLeft() % 26), end="")
+				print()
+
+	print("\n=== top,left ===")
+	# For each color: go over each board and print location of squares in this color as letters.
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		for r in range(3):
+			for c in range(3):
+				print(f"board{r}{c}: ", end="")
+				squares = sorted([square for square in all_boards[r][c] if square.color == color], key=lambda square: (square.top(), square.left()))
+				for square in squares:
+					print(chr(65 + square.gridTop() % 26) + chr(65 + square.gridLeft() % 26), end="")
+				print()
+
+	print("\n=== bottom,left ===")
+	# For each color: go over each board and print location of squares in this color as letters.
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		for r in range(3):
+			for c in range(3):
+				print(f"board{r}{c}: ", end="")
+				squares = sorted([square for square in all_boards[r][c] if square.color == color], key=lambda square: (square.top(), square.left()))
+				for square in squares:
+					print(chr(65 + square.gridBottom() % 26) + chr(65 + square.gridLeft() % 26), end="")
+				print()
+
+	print("\n=== (gridTop, gridLeft) numeric, sorted over whole grid ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		squares = sorted([square for square in all_squares_list if square.color == color], key=lambda square: (square.gridTop(), square.gridLeft()))
+		print(f"all boards [{len(squares)} squares]:", end="")
+		for square in squares:
+			print(f" ({square.gridTop()}, {square.gridLeft()})", end="")
+		print()
+
+	print("\n=== gridTop,gridLeft, sorted over whole grid ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		squares = sorted([square for square in all_squares_list if square.color == color], key=lambda square: (square.gridTop(), square.gridLeft()))
+		for square in squares:
+			print(chr(65 + square.gridTop() % 26) + chr(65 + square.gridLeft() % 26), end="")
+		print()
+
+	print("\n=== gridTop, sorted over whole grid by gridTop ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		squares = sorted([square for square in all_squares_list if square.color == color], key=lambda square: square.gridTop())
+		for square in squares:
+			print(chr(65 + square.gridTop() % 26), end="")
+		print()
+
+	print("\n=== gridTop, sorted_unique over whole grid by gridTop ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		squares = sorted_unique([square for square in all_squares_list if square.color == color], key=lambda square: square.gridTop())
+		for square in squares:
+			print(chr(65 + square.gridTop() % 26), end="")
+		print()
+
+	print("\n=== gridLeft, sorted over whole grid by gridLeft ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		# Note: sort by (gridLeft, gridTop).
+		squares = sorted([square for square in all_squares_list if square.color == color], key=lambda square: square.gridLeft())
+		for square in squares:
+			print(chr(65 + square.gridLeft() % 26), end="")
+		print()
+
+	print("\n=== gridLeft, sorted_unique over whole grid by gridLeft ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		# Note: sort by (gridLeft, gridTop).
+		squares = sorted_unique([square for square in all_squares_list if square.color == color], key=lambda square: square.gridLeft())
+		for square in squares:
+			print(chr(65 + square.gridLeft() % 26), end="")
+		print()
+
+	print("\n=== gridTop, sorted over whole grid by gridLeft ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		squares = sorted([square for square in all_squares_list if square.color == color], key=lambda square: (square.gridLeft(), square.gridTop()))
+		for square in squares:
+			print(chr(65 + square.gridTop() % 26), end="")
+		print()
+
+	print("\n=== gridLeft, sorted over whole grid by gridTop ===")
+	for color in colorsSortedBySide:
+		print(color.name, "squares:")
+		print(f"all boards: ", end="")
+		# Note: sort by (gridLeft, gridTop).
+		squares = sorted([square for square in all_squares_list if square.color == color], key=lambda square: (square.gridTop(), square.gridLeft()))
+		for square in squares:
+			print(chr(65 + square.gridLeft() % 26), end="")
+		print()
+
+	print("\n=== gridTop,gridLeft, sorted over whole grid, sets of smallest colors ===")
+	for numSmallestColors in range(1, len(Color)+1):
+		colorsToConsider = colorsSortedBySide[:numSmallestColors]
+		print([color.name for color in colorsToConsider], "squares:")
+		print(f"all boards: ", end="")
+		squares = sorted([square for square in all_squares_list if square.color in colorsToConsider], key=lambda square: (square.gridTop(), square.gridLeft()))
+		for square in squares:
+			print(chr(65 + square.gridTop() % 26) + chr(65 + square.gridLeft() % 26), end="")
+		print()
+
+	print("\n=== gridTop,gridLeft, sorted over whole grid, sets of smallest colors, rot13 ===")
+	for numSmallestColors in range(1, len(Color)+1):
+		colorsToConsider = colorsSortedBySide[:numSmallestColors]
+		print([color.name for color in colorsToConsider], "squares:")
+		print(f"all boards: ", end="")
+		squares = sorted([square for square in all_squares_list if square.color in colorsToConsider], key=lambda square: (square.gridTop(), square.gridLeft()))
+		for square in squares:
+			print(chr(65 + (square.gridTop() + 13) % 26) + chr(65 + (square.gridLeft() + 13) % 26), end="")
+		print()
+
+	print("\n=== top,left, sets of smallest colors ===")
+	# For each color: go over each board and print location of squares in this color as letters.
+	for numSmallestColors in range(1, len(Color)+1):
+		colorsToConsider = colorsSortedBySide[:numSmallestColors]
+		print([color.name for color in colorsToConsider], "squares:")
+		for r in range(3):
+			for c in range(3):
+				print(f"board{r}{c}: ", end="")
+				squares = sorted([square for square in all_boards[r][c] if square.color in colorsToConsider], key=lambda square: (square.top(), square.left()))
+				for square in squares:
+					print(chr(65 + square.gridTop() % 26) + chr(65 + square.gridLeft() % 26), end="")
+				print()
+
+	print("\n=== top,left, sets of smallest colors, rot13 ===")
+	# For each color: go over each board and print location of squares in this color as letters.
+	for numSmallestColors in range(1, len(Color)+1):
+		colorsToConsider = colorsSortedBySide[:numSmallestColors]
+		print([color.name for color in colorsToConsider], "squares:")
+		for r in range(3):
+			for c in range(3):
+				print(f"board{r}{c}: ", end="")
+				squares = sorted([square for square in all_boards[r][c] if square.color in colorsToConsider], key=lambda square: (square.top(), square.left()))
+				for square in squares:
+					print(chr(65 + (square.gridTop() + 13) % 26) + chr(65 + (square.gridLeft() + 13) % 26), end="")
+				print()
+
+
+printGrid()
+tryToDecodeSquares()
+printRowLettersFromSquaresForGrid()

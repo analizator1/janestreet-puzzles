@@ -88,6 +88,11 @@ public:
 		// position of tile_pos + orthogonal_dirs[i]. Bit value of true means that corresponding cell is in the set.
 		// When the set is empty, the tile's value must be 0.
 		std::bitset<4> cells_for_displacement;
+
+		bool operator==(Tile const & other) const
+		{
+			return col == other.col && cells_for_displacement == other.cells_for_displacement;
+		}
 	};
 
 	struct Row
@@ -113,6 +118,24 @@ public:
 	{
 		std::fill(&cell_value[0], &cell_value[num_rows * num_cols], -1);
 		std::fill(&cell_region[0], &cell_region[num_rows * num_cols], -1);
+	}
+
+	Board(Board const & other):
+		num_rows(other.num_rows),
+		num_cols(other.num_cols),
+		numbers_in_grid(other.numbers_in_grid),
+		cell_value(new int8_t[num_rows * num_cols]),
+		cell_region(new int8_t[num_rows * num_cols]),
+		cell_is_highlighted(other.cell_is_highlighted, num_rows * num_cols),
+		regions(other.regions),
+		rows(new Row[num_rows]),
+		row_is_processed(other.row_is_processed, num_rows),
+		row_has_region_assignments(other.row_has_region_assignments, num_rows),
+		row_has_tiles_placement(other.row_has_tiles_placement, num_rows)
+	{
+		std::copy(&other.cell_value[0], &other.cell_value[num_rows * num_cols], &this->cell_value[0]);
+		std::copy(&other.cell_region[0], &other.cell_region[num_rows * num_cols], &this->cell_region[0]);
+		std::copy(&other.rows[0], &other.rows[num_rows], &this->rows[0]);
 	}
 
 	void set_num_regions(int n)
@@ -252,6 +275,12 @@ public:
 		return rows[row].tiles;
 	}
 
+	std::vector<Tile> const & get_row_tiles(int row) const
+	{
+		assert(row >= 0 && row < num_rows);
+		return rows[row].tiles;
+	}
+
 	bool get_row_is_processed(int row) const
 	{
 		return row_is_processed.get_bit(row);
@@ -291,6 +320,54 @@ public:
 			row_has_tiles_placement.clear_bit(row);
 	}
 
+	// Not all fields need to be checked:
+	// - num_rows, num_cols: this is read from input file
+	// - numbers_in_grid: this is a function of cell values and tiles
+	// - cell_region: this is read from input file
+	// - cell_is_highlighted: this is read from input file
+	bool operator==(Board const & other) const
+	{
+		return std::equal(&cell_value[0], &cell_value[num_rows * num_cols], &other.cell_value[0]) &&
+			compare_region_values(other) &&
+			compare_row_tiles(other) &&
+			row_is_processed.is_equal(other.row_is_processed, num_rows) &&
+			row_has_region_assignments.is_equal(other.row_has_region_assignments, num_rows) &&
+			row_has_tiles_placement.is_equal(other.row_has_tiles_placement, num_rows);
+	}
+
+	bool compare_region_values(Board const & other) const
+	{
+		int const num_regions = (int)regions.size();
+		assert((int)other.regions.size() == num_regions);
+		for (int i = 0; i < num_regions; ++i)
+		{
+			if (regions[i].value != other.regions[i].value)
+				return false;
+		}
+		return true;
+	}
+
+	bool compare_row_tiles(Board const & other) const
+	{
+		for (int row = 0; row < num_rows; ++row)
+		{
+			if (rows[row].tiles != other.rows[row].tiles)
+				return false;
+		}
+		return true;
+	}
+
+	uint64_t compute_hash() const
+	{
+		uint64_t const prime = 1000003;
+		uint64_t result = 0;
+		for (int i = 0; i < num_rows * num_cols; ++i)
+		{
+			result = (result * prime) ^ cell_value[i];
+		}
+		return result;
+	}
+
 	int num_rows;
 	int num_cols;
 
@@ -314,6 +391,15 @@ private:
 	DynamicBitset row_has_tiles_placement; // for each row
 };
 
+template<>
+struct std::hash<Board>
+{
+	uint64_t operator()(Board const & board) const
+	{
+		return board.compute_hash();
+	}
+};
+
 std::ostream & operator<<(std::ostream & out, Board const & board)
 {
 	out << "Grid:\n";
@@ -325,9 +411,26 @@ std::ostream & operator<<(std::ostream & out, Board const & board)
 		{
 			int const value = board.get_cell_value({row, col});
 			if (value == -1)
+			{
 				out << " .";
+			}
 			else
-				out << ' ' << value;
+			{
+				std::vector<Board::Tile> const & tiles = board.get_row_tiles(row);
+				auto it = std::find_if(tiles.begin(), tiles.end(), [col](Board::Tile const & tile)
+						{return tile.col == col;});
+				if (it != tiles.end())
+				{
+					if (value == 0)
+						out << " X"; // fully displaced tile
+					else
+						out << '~' << value; // tile not yet fully displaced
+				}
+				else
+				{
+					out << ' ' << value;
+				}
+			}
 		}
 		out << '\n';
 	}
@@ -981,16 +1084,16 @@ private:
 		bool visit_more = true;
 		if (is_ok)
 		{
-			DBG2(std::cout << "RowProcessor: found values for row " << current_row
-				<< ", board:\n" << board << std::endl);
+			//DBG2(std::cout << "RowProcessor: found values for row " << current_row
+			//	<< ", board:\n" << board << std::endl);
 
 			// hints are satisfied and numbers are unique in grid
 			visit_more = callback();
 		}
 		else
 		{
-			DBG3(std::cout << "RowProcessor: did NOT find values for row " << current_row
-				<< ", board:\n" << board << std::endl);
+			//DBG3(std::cout << "RowProcessor: did NOT find values for row " << current_row
+			//	<< ", board:\n" << board << std::endl);
 		}
 
 		for (uint64_t number : added_numbers)
@@ -1016,7 +1119,8 @@ public:
 	NumberCrossSolver(Board & board, Callback const & callback):
 		board(board),
 		callback(callback),
-		rec_level(0)
+		rec_level(0),
+		processed_boards()
 	{
 	}
 
@@ -1028,6 +1132,17 @@ public:
 private:
 	void rec_solve()
 	{
+		if (rec_level <= processed_boards_max_rec_level)
+		{
+			if (processed_boards.find(board) != processed_boards.end())
+			{
+				DBG(std::cout << __func__
+					<< " rec_level: " << rec_level
+					<< " board already processed, skipping" << std::endl);
+				return;
+			}
+		}
+
 		// Pick the most promising row that has not been processed yet. If no such row then print answer.
 		// Row is better if it has lower branching degree, i.e. lower number of direct calls to rec_solve().
 
@@ -1067,6 +1182,13 @@ private:
 		{
 			int const current_row = p.second;
 
+			DBG2(std::cout << __func__
+				<< " rec_level: " << rec_level
+				<< " start checking degree of current_row: " << current_row
+				<< " best_row_degree: " << best_row_degree
+				<< " best_row: " << best_row
+				<< std::endl);
+
 			uint32_t current_row_degree = 0;
 			RowProcessor work(board, current_row, [&]()
 			{
@@ -1074,10 +1196,11 @@ private:
 
 				DBG2(std::cout << "[degree testing callback]"
 					<< " rec_level: " << rec_level
-					<< " degree of current_row: " << current_row << " is: " << current_row_degree
+					<< " degree of current_row: " << current_row << " is at the moment: " << current_row_degree
 					<< " best_row_degree: " << best_row_degree
 					<< " best_row: " << best_row
 					<< std::endl);
+				DBG3(std::cout << board << std::endl);
 
 				return current_row_degree < best_row_degree;
 			});
@@ -1091,7 +1214,7 @@ private:
 
 			DBG(std::cout << __func__
 				<< " rec_level: " << rec_level
-				<< " degree of current_row: " << current_row << " is: " << current_row_degree
+				<< " found degree of current_row: " << current_row << " to be: " << current_row_degree
 				<< " best_row_degree: " << best_row_degree
 				<< " best_row: " << best_row
 				<< std::endl);
@@ -1100,11 +1223,6 @@ private:
 				break;
 		}
 
-		DBG(std::cout << __func__
-			<< " rec_level: " << rec_level
-			<< " best_row: " << best_row
-			<< " best_row_degree: " << best_row_degree << std::endl);
-
 		if (best_row_degree == std::numeric_limits<uint32_t>::max())
 		{
 			// all rows were processed
@@ -1112,6 +1230,11 @@ private:
 		}
 		else if (best_row_degree > 0)
 		{
+			DBG(std::cout << __func__
+				<< " rec_level: " << rec_level
+				<< " start processing best_row: " << best_row
+				<< " with degree: " << best_row_degree << std::endl);
+
 			// process best row, calling us recursively
 			assert(!board.get_row_is_processed(best_row));
 			board.set_row_is_processed(best_row, true);
@@ -1125,11 +1248,21 @@ private:
 			work.run();
 			board.set_row_is_processed(best_row, false);
 		}
+
+		if (rec_level <= processed_boards_max_rec_level)
+		{
+			auto p = processed_boards.insert(board);
+			// It should get inserted, otherwise it means we did a rec_solve() that led to the same board.
+			assert(p.second);
+		}
 	}
+
+	static constexpr int processed_boards_max_rec_level = 5;
 
 	Board & board;
 	Callback const callback;
 	int rec_level;
+	std::unordered_set<Board> processed_boards;
 };
 
 int main()

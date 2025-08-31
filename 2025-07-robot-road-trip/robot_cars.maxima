@@ -1,0 +1,73 @@
+/* vim:filetype=maxima:et:
+ */
+
+[v1:1, v2:2, a:1];
+assume(alfa>v1, alfa<v2, va>0);
+
+/* expected lost distance per car trip */
+EL: z/(v2-v1)^2/a *
+(
+    /* first integrals term: both on fast lane, dn >= 0 */
+    integrate( (va-alfa)^2 *
+        integrate(
+            integrate(
+                integrate(
+                    1,
+                    dt, -dn/vb, -dn/va + N*(1/va-1/vb)
+                ),
+                dn, 0, N
+            ),
+            vb, va, v2
+        ),
+        va, alfa, v2
+    ) +
+    /* second integrals term: both on fast lane, dn < 0 */
+    integrate( (va-alfa)^2 *
+        integrate(
+            integrate(
+                integrate(
+                    1,
+                    dt, -dn/va, -dn/vb + N*(1/va-1/vb)
+                ),
+                dn, -N, 0
+            ),
+            vb, va, v2
+        ),
+        va, alfa, v2
+    ) +
+    /* third integrals term: both on slow lane, dn >= 0 */
+    integrate( va^2 *
+        integrate(
+            integrate(
+                integrate(
+                    1,
+                    dt, -dn/vb, -dn/va + N*(1/va-1/vb)
+                ),
+                dn, 0, N
+            ),
+            vb, va, alfa
+        ),
+        va, v1, alfa
+    ) +
+    /* forth integrals term: both on slow lane, dn < 0 */
+    integrate( va^2 *
+        integrate(
+            integrate(
+                integrate(
+                    1,
+                    dt, -dn/va, -dn/vb + N*(1/va-1/vb)
+                ),
+                dn, -N, 0
+            ),
+            vb, va, alfa
+        ),
+        va, v1, alfa
+    )
+);
+
+plot2d(EL, [alfa, 1, 2]), N=10, z=0.1;
+
+bf_find_root(diff(EL, alfa), alfa, 1, 2), N=10^1, z=1b-1;
+bf_find_root(diff(EL, alfa), alfa, 1, 2), N=10^2, z=1b-3;
+bf_find_root(diff(EL, alfa), alfa, 1, 2), N=10^4, z=1b-6;
+bf_find_root(diff(EL, alfa), alfa, 1, 2), N=10^10, z=1b-10;

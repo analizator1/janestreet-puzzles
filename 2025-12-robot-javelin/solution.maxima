@@ -65,18 +65,93 @@ p_A_less_B_fun(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, ev(ev(p_A_less
 /* should yield the same plot */
 plot3d(subst([dx=0, dh=db, dl=db], 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1], [db, 0, 1]);
 
+grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B, eval), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
+
 grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
 grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), dx), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
 grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), dh), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
 grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), dl), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+
+is(grad_da(0.5, 0, 0.5, 0.5) = -0.125);
+is(grad_da_straightforward_BAD(0.5, 0, 0.5, 0.5) = -0.125);
 
 load("lbfgs");
 estimates: lbfgs(subst(da=d_eq, '[-p_A_less_B_fun(da, dx, dh, dl), [-grad_dx(da, dx, dh, dl), -grad_dh(da, dx, dh, dl), -grad_dl(da, dx, dh, dl)]]), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
 /*
  THE MINIMIZATION TERMINATED WITHOUT DETECTING ERRORS.
  IFLAG = 0
-(%o34) [dx = 0.6181829933081731, dh = 0.6911577540600253, 
-                                                       dl = 0.5000486022046384]
+(%o34) [dx = 0.6181829933081731, dh = 0.6911577540600253, dl = 0.5000486022046384]
 */
 
-ev(is(dl<da and da<dx and dx<dh), estimates, da=d_eq);
+/* Solve analytically for Spears Robot. We need to evaluate our formula with assumptions as for the expected range of optimum. */
+context:tempc;
+assume(dl<da and da<dx and dx<dh);
+print("Solving analytically for Spears Robot with assumptions:", facts())$
+expr: ratsimp(subst(da=d_eq, ev(p_A_less_B, eval)));
+solutions: solve(map(lambda([x], diff(expr, x)), [dx, dh, dl]), [dx, dh, dl]);
+killcontext(tempc);
+
+/* Verify numeric estimates and analytic solutions. */
+for vars in append([estimates], solutions) do (
+    vars: cons(da=d_eq, vars),
+    print("Checking solution for Spears Robot:", ev(vars, numer)),
+    val1: ev(ev(ev(p_A_less_B), vars), numer), /* for Spears Robot */
+    print("Probability for Spears Robot is:", val1),
+    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), vars)),
+    print("-------")
+)$
+
+solution_spears: solutions[2];
+
+(
+    vars: cons(da=d_eq, solution_spears),
+    print("Final solution for Spears Robot:", ev(vars, numer)),
+    val1: ev(ev(ev(p_A_less_B), vars), numer), /* for Spears Robot */
+    print("Probability for Spears Robot is:", val1),
+    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), vars)),
+    print("-------")
+)$
+
+/************************************************************************************************************************
+ * Previously we maximized P(A<B). We now need to maximize probability for Java-lin, which is 1-P(A<B), by minimizing
+ * P(A<B) over da, using previously computed optimal (for Spears Robot) dx, dh, dl, stored in solution_spears.
+************************************************************************************************************************/
+plot2d(subst(solution_spears, 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1]);
+estimates: lbfgs(subst(solution_spears, '[p_A_less_B_fun(da, dx, dh, dl), [grad_da(da, dx, dh, dl)]]), [da], [0.5], 1e-4, [1, 0]);
+
+/* Solve analytically for Java-lin. We need to evaluate our formula with assumptions as for the expected range of optimum. */
+context:tempc;
+assume(dl<da and da<dx and dx<dh);
+print("Solving analytically for Java-lin with assumptions:", facts())$
+expr: ratsimp(subst(solution_spears, ev(p_A_less_B, eval)));
+/* There is just one solution, let's wrap it in a list so that below code looks similar to that for Spears Robot. */
+solutions: [solve(map(lambda([x], diff(expr, x)), [da]), [da])];
+killcontext(tempc);
+
+/* Verify numeric estimates and analytic solutions. */
+for vars in append([estimates], solutions) do (
+    vars: append(solution_spears, vars),
+    print("Checking solution for Java-lin:", ev(vars, numer)),
+    val0: ev(ev(ev(p_A_less_B), vars), numer), /* for Spears Robot */
+    val1: ev(ev(ev(1 - p_A_less_B), vars), numer), /* for Java-lin */
+    print("Probability for Spears Robot is:", val0),
+    print("Probability for Java-lin is:", val1),
+    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), vars)),
+    print("-------")
+)$
+
+solution_javalin: solutions[1];
+
+(
+    vars: append(solution_spears, solution_javalin),
+    print("Final solution for Java-lin:", ev(vars, numer)),
+    val0: ev(ev(ev(p_A_less_B), vars), numer), /* for Spears Robot */
+    val1_exact: ev(ev(1 - p_A_less_B), vars), /* for Java-lin */
+    print("Probability value for Spears Robot is:", val0),
+    print("Probability for Java-lin is:", ratsimp(ev(val1_exact))),
+    print("Probability value for Java-lin is:", ev(val1_exact, numer)),
+    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), vars)),
+    print("-------")
+)$
+
+print("Probability value for Java-lin rounded to 10 places is:", ev(round(val1_exact * 10^10) / 10^10, numer))$

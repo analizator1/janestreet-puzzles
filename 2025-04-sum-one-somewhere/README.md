@@ -81,7 +81,7 @@ We find first 10 decimal places of p using bisection:
                               if ev(pred) then a:c+1 else b:c),a-1)
 (%o19)                            5306035754
 ```
-It turns out Maxima has a built-in function [realroots](https://maxima.sourceforge.io/docs/manual/maxima_108.html#index-realroots) that uses
+It turns out Maxima has a built-in function [realroots](https://maxima.sourceforge.io/docs/manual/Equations.html#index-realroots) that uses
 exact rational arithmetic and computes roots with given tolerance. It can also find the solution, but one has to make sure to set tolerance
 low enough so that 10 decimal places are accurate. 10^-11 is good in this case, but if 11th decimal digit was 0 or 9, then we would have to
 use even lower tolerance.

@@ -14,14 +14,27 @@ m_(x) := if x >= 0 then x else 0;
  * gradef(m_(x), if x >= 0 then 1 else 0);
  */
 
+/* We compute P(A<B) by splitting it into 8 parts. */
 p_A_less_B: apply("+", makelist(concat(part, i), i, 8));
+
+/* Cases where A1>=dx. This is the information that leaks to Spears Robot. */
+/* P(A<B and A1<da and B1<dh and A1>=dx) */
 part1: 1/2 * m2(dx, da) * dh;
+/* P(A<B and A1>=da and B1<dh and A1>=dx) */
 part2: 1/2 * (1 - max(dx, da))^2 * dh;
+/* P(A<B and A1<da and B1>=dh and A1>=dx) */
 part3: 1/2 * (1 - dh^2) * m2(dx, da);
+/* P(A<B and A1>=da and B1>=dh and A1>=dx) */
 part4: 1/2 * ((1 - max(dx, da))^2 - m2(max(dx, da), dh)^2);
+
+/* Cases where A1<dx */
+/* P(A<B and A1<da and B1<dl and A1<dx) */
 part5: 1/2 * min(dx, da) * dl;
+/* P(A<B and A1>=da and B1<dl and A1<dx) */
 part6: 1/2 * m2(da, dx) * (2 - da - dx) * dl;
+/* P(A<B and A1<da and B1>=dl and A1<dx) */
 part7: 1/2 * (1 - dl^2) * min(da, dx);
+/* P(A<B and A1>=da and B1>=dl and A1<dx) */
 part8: 1/2 * (m2(da, dx) * (2 - da - dx) - m2(da, min(dl, dx)) * (m2(dx, dl) + m2(da, dl)));
 
 /* Assumptions are necessary to get a nice result, and to get a result at all when computing diff. Without them, Maxima
@@ -42,12 +55,18 @@ assume(db>da);
    It actually revealed a bug.
 */
 if not equal(ev(ev(p_A_less_B), dx=0, dh=db, dl=db), 1/2*(-(da+1)*db^2+(da^2+da+1)*db-da+1)) then error("Incorrect result for the simple case") else OK;
+
+/* Compute equilibrium. We rely on the assume(db>da). */
+opt_db_given_da: solve(diff(ev(ev(p_A_less_B), dx=0, dh=db, dl=db), db), db)[1];
+/* In equilibrium we should have db = da, therefore: */
+positive_equilibrium_solutions: sublist(solve(rhs(opt_db_given_da) = da), lambda([eq], rhs(eq) > 0));
+d_eq: rhs(positive_equilibrium_solutions[1]);
+/* Verify equilibrium is as expected. */
+is(d_eq = (sqrt(5)-1)/2);
+
 forget(db>da);
 
 plot3d(ev(ev(p_A_less_B), dx=0, dh=db, dl=db), [da, 0, 1], [db, 0, 1]);
-
-/* equilibrium */
-d_eq: (sqrt(5)-1)/2;
 
 order_ev(x, y) := ev(x) < ev(y);
     /*print("before ev(expr), facts are", facts()),*/

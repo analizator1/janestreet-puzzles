@@ -1,12 +1,17 @@
 /* vim:filetype=maxima:et:sw=4:
  */
 
-/* UPDATE: it is possible to compute a diff when otherwise maxima can't do it. */
-/* m2(a, b) := (b-a) * unit_step(b-a); */
-m2(a, b) := m_(b - a);
+/*
+get_plot_option(plot_format);
+set_plot_option([plot_format, gnuplot]);
+*/
+
+/*
+m(a, b) := (b-a) * unit_step(b-a);
+m(a, b) := m_(b - a);
 
 m_(x) := if x >= 0 then x else 0;
-/* Maxima can't compute diff of above. We can however make it a noun (to leave it unevaluated) and provide the diff
+ * Maxima can't compute diff of above. We can however make it a noun (to leave it unevaluated) and provide the diff
  * ourselves. Below is slightly inaccurate, as m_(x) is not differentiable at x=0, but p_A_less_B is probably smooth
  * enough.
  * declare(m_, noun);
@@ -14,33 +19,41 @@ m_(x) := if x >= 0 then x else 0;
  * gradef(m_(x), if x >= 0 then 1 else 0);
  */
 
+ /* Measure of [a; b] interval. */
+ m(a, b) := max(b-a, 0);
+
 /* We compute P(A<B) by splitting it into 8 parts. */
 p_A_less_B: apply("+", makelist(concat(part, i), i, 8));
 
 /* Cases where A1>=dx. This is the information that leaks to Spears Robot. */
 /* P(A<B and A1<da and B1<dh and A1>=dx) */
-part1: 1/2 * m2(dx, da) * dh;
+part1: 1/2 * m(dx, da) * dh;
 /* P(A<B and A1>=da and B1<dh and A1>=dx) */
 part2: 1/2 * (1 - max(dx, da))^2 * dh;
 /* P(A<B and A1<da and B1>=dh and A1>=dx) */
-part3: 1/2 * (1 - dh^2) * m2(dx, da);
+part3: 1/2 * (1 - dh^2) * m(dx, da);
 /* P(A<B and A1>=da and B1>=dh and A1>=dx) */
-part4: 1/2 * ((1 - max(dx, da))^2 - m2(max(dx, da), dh)^2);
+part4: 1/2 * ((1 - max(dx, da))^2 - m(max(dx, da), dh)^2);
 
 /* Cases where A1<dx */
 /* P(A<B and A1<da and B1<dl and A1<dx) */
 part5: 1/2 * min(dx, da) * dl;
 /* P(A<B and A1>=da and B1<dl and A1<dx) */
-part6: 1/2 * m2(da, dx) * (2 - da - dx) * dl;
+part6: 1/2 * m(da, dx) * (2 - da - dx) * dl;
 /* P(A<B and A1<da and B1>=dl and A1<dx) */
 part7: 1/2 * (1 - dl^2) * min(da, dx);
 /* P(A<B and A1>=da and B1>=dl and A1<dx) */
-part8: 1/2 * (m2(da, dx) * (2 - da - dx) - m2(da, min(dl, dx)) * (m2(dx, dl) + m2(da, dl)));
+part8: 1/2 * (m(da, dx) * (2 - da - dx) - m(da, min(dl, dx)) * (m(dx, dl) + m(da, dl)));
+
+/* Evaluate to get rid of partX in p_A_less_B. Later, we need ev(p_A_less_B) only to simplify the expression after we
+ * assume() something. */
+p_A_less_B: ev(p_A_less_B);
 
 /* Assumptions are necessary to get a nice result, and to get a result at all when computing diff. Without them, Maxima
- * can't compute the diff symbolically, which is expected, given that unit_step() is not differentiable at 0. However,
- * Maxima even has trouble when computing a value of such diff at given point, which should be doable using at(), but
- * somehow it needs to have the symbolic diff computed first.
+ * doesn't compute the diff symbolically, which is justifiable, given that max(x, 0) is not differentiable at x=0. However,
+ * Maxima is also unable to compute value of such diff at a given (numeric) point, which should be doable using at(),
+ * and instead returns a noun form of diff. To resolve this issue, and to be able to get an expression without max/min
+ * as needed for solve(), we introduce assume_and_eval function.
  */
 assume(da>0, da<1);
 assume(db>0, db<1);
@@ -54,10 +67,10 @@ assume(db>da);
    Then we compare it with manually calculated result for the simple case.
    It actually revealed a bug.
 */
-if not equal(ev(ev(p_A_less_B), dx=0, dh=db, dl=db), 1/2*(-(da+1)*db^2+(da^2+da+1)*db-da+1)) then error("Incorrect result for the simple case") else OK;
+if not equal(ev(p_A_less_B, dx=0, dh=db, dl=db), 1/2*(-(da+1)*db^2+(da^2+da+1)*db-da+1)) then error("Incorrect result for the simple case") else OK;
 
 /* Compute equilibrium. We rely on the assume(db>da). */
-opt_db_given_da: solve(diff(ev(ev(p_A_less_B), dx=0, dh=db, dl=db), db), db)[1];
+opt_db_given_da: solve(diff(ev(p_A_less_B, dx=0, dh=db, dl=db), db), db)[1];
 /* In equilibrium we should have db = da, therefore: */
 positive_equilibrium_solutions: sublist(solve(rhs(opt_db_given_da) = da), lambda([eq], rhs(eq) > 0));
 d_eq: rhs(positive_equilibrium_solutions[1]);
@@ -65,8 +78,6 @@ d_eq: rhs(positive_equilibrium_solutions[1]);
 is(d_eq = (sqrt(5)-1)/2);
 
 forget(db>da);
-
-plot3d(ev(ev(p_A_less_B), dx=0, dh=db, dl=db), [da, 0, 1], [db, 0, 1]);
 
 order_ev(x, y) := ev(x) < ev(y);
     /*print("before ev(expr), facts are", facts()),*/
@@ -79,22 +90,30 @@ assume_and_eval(da, dx, dh, dl, 'expr) := block([da_:da, dx_:dx, dh_:dh, dl_:dl,
     result
 );
 
-p_A_less_B_fun(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, ev(ev(p_A_less_B, eval), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-/* should yield the same plot */
+p_A_less_B_fun(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, ev(ev(p_A_less_B), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+
+/* Maxima 5.46.0 has a bug with 3d plots:
+set pm3d hidden3d 100 border lw 0.5 lt rgb "#000000"
+                  ^
+"/tmp/maxout12350.gnuplot" line 9: invalid pm3d option
+*/
+/* both should yield the same plot */
+plot3d(ev(p_A_less_B, dx=0, dh=db, dl=db), [da, 0, 1], [db, 0, 1]);
 plot3d(subst([dx=0, dh=db, dl=db], 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1], [db, 0, 1]);
 
-grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B, eval), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
+grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
 
-grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), dx), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), dh), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B, eval), dl), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), dx), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), dh), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), dl), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
 
 is(grad_da(0.5, 0, 0.5, 0.5) = -0.125);
 is(grad_da_straightforward_BAD(0.5, 0, 0.5, 0.5) = -0.125);
 
 load("lbfgs");
-estimates: lbfgs(subst(da=d_eq, '[-p_A_less_B_fun(da, dx, dh, dl), [-grad_dx(da, dx, dh, dl), -grad_dh(da, dx, dh, dl), -grad_dl(da, dx, dh, dl)]]), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
+
+estimates_spears: lbfgs(subst(da=d_eq, '[-p_A_less_B_fun(da, dx, dh, dl), [-grad_dx(da, dx, dh, dl), -grad_dh(da, dx, dh, dl), -grad_dl(da, dx, dh, dl)]]), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
 /*
  THE MINIMIZATION TERMINATED WITHOUT DETECTING ERRORS.
  IFLAG = 0
@@ -105,27 +124,27 @@ estimates: lbfgs(subst(da=d_eq, '[-p_A_less_B_fun(da, dx, dh, dl), [-grad_dx(da,
 context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Spears Robot with assumptions:", facts())$
-expr: ratsimp(subst(da=d_eq, ev(p_A_less_B, eval)));
-solutions: solve(map(lambda([x], diff(expr, x)), [dx, dh, dl]), [dx, dh, dl]);
+expr: ratsimp(subst(da=d_eq, ev(p_A_less_B)));
+solutions_spears: radcan(solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]));
 killcontext(tempc);
 
 /* Verify numeric estimates and analytic solutions. */
-for sol in append([estimates], solutions) do (
+for sol in append([estimates_spears], solutions_spears) do (
     sol: cons(da=d_eq, sol),
     print("Checking solution for Spears Robot:", ev(sol, numer)),
-    val1: ev(ev(ev(p_A_less_B), sol), numer), /* for Spears Robot */
-    print("Probability for Spears Robot is:", val1),
+    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
+    print("Probability for Spears Robot is:", prob_spears),
     print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
     print("-------")
 )$
 
-opt_vars_spears: solutions[2];
+opt_vars_spears: solutions_spears[2];
 
 (
     sol: cons(da=d_eq, opt_vars_spears),
     print("Final solution for Spears Robot:", ev(sol, numer)),
-    val1: ev(ev(ev(p_A_less_B), sol), numer), /* for Spears Robot */
-    print("Probability for Spears Robot is:", val1),
+    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
+    print("Probability for Spears Robot is:", prob_spears),
     print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
     print("-------")
 )$
@@ -134,44 +153,43 @@ opt_vars_spears: solutions[2];
  * Previously we maximized P(A<B). We now need to maximize probability for Java-lin, which is 1-P(A<B), by minimizing
  * P(A<B) over da, using previously computed optimal (for Spears Robot) dx, dh, dl, stored in opt_vars_spears.
 ************************************************************************************************************************/
-plot2d(subst(opt_vars_spears, 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1]);
-estimates: lbfgs(subst(opt_vars_spears, '[p_A_less_B_fun(da, dx, dh, dl), [grad_da(da, dx, dh, dl)]]), [da], [0.5], 1e-4, [1, 0]);
+/* plot2d(subst(opt_vars_spears, 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1]); */
+estimates_javalin: lbfgs(subst(opt_vars_spears, '[p_A_less_B_fun(da, dx, dh, dl), [grad_da(da, dx, dh, dl)]]), [da], [0.5], 1e-4, [1, 0]);
 
 /* Solve analytically for Java-lin. We need to evaluate our formula with assumptions as for the expected range of optimum. */
 context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Java-lin with assumptions:", facts())$
-expr: ratsimp(subst(opt_vars_spears, ev(p_A_less_B, eval)));
-solutions: solve(map(lambda([x], diff(expr, x)), [da]), [da]);
+expr: ratsimp(subst(opt_vars_spears, ev(p_A_less_B)));
+solutions_javalin: radcan(solve(makelist(diff(expr, x), x, [da]), [da]));
 killcontext(tempc);
 
 /* Verify numeric estimates and analytic solutions. */
-for sol in append([estimates], solutions) do (
+for sol in append([estimates_javalin], solutions_javalin) do (
     /* This time sol is not a list, but a single equation. */
     sol: cons(sol, opt_vars_spears),
     print("Checking solution for Java-lin:", ev(sol, numer)),
-    val0: ev(ev(ev(p_A_less_B), sol), numer), /* for Spears Robot */
-    val1: ev(ev(ev(1 - p_A_less_B), sol), numer), /* for Java-lin */
-    print("Probability for Spears Robot is:", val0),
-    print("Probability for Java-lin is:", val1),
+    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
+    prob_javalin: ev(ev(1 - p_A_less_B, sol), numer), /* for Java-lin */
+    print("Probability for Spears Robot is:", prob_spears),
+    print("Probability for Java-lin is:", prob_javalin),
     print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
     print("-------")
 )$
 
-opt_var_javalin: solutions[1];
+opt_var_javalin: solutions_javalin[1];
 
 (
     sol: cons(opt_var_javalin, opt_vars_spears),
     print("Final solution for Java-lin:", ev(sol, numer)),
-    val0: ev(ev(ev(p_A_less_B), sol), numer), /* for Spears Robot */
-    val1_exact: ev(ev(1 - p_A_less_B), sol), /* for Java-lin */
-    print("Probability value for Spears Robot is:", val0),
-    print("Probability for Java-lin is:", ratsimp(ev(val1_exact))),
-    print("Probability value for Java-lin is:", ev(val1_exact, numer)),
+    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
+    prob_javalin_exact: ev(1 - p_A_less_B, sol), /* for Java-lin */
+    prob_javalin_rounded: ev(round(prob_javalin_exact * 10^10) / 10^10, numer),
+    print("Probability for Spears Robot is:", prob_spears),
+    print("Probability for Java-lin is:", ratsimp(prob_javalin_exact), "which equals:", ev(prob_javalin_exact, numer)),
+    print("Probability for Java-lin rounded to 10 places is:", prob_javalin_rounded),
     print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
     print("-------")
 )$
 
-final_prob_javalin_rounded: ev(round(val1_exact * 10^10) / 10^10, numer)$
-print("Probability value for Java-lin rounded to 10 places is:", final_prob_javalin_rounded)$
-is(final_prob_javalin_rounded = 0.4939370904);
+is(prob_javalin_rounded = 0.4939370904);

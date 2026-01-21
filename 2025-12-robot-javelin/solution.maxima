@@ -80,17 +80,20 @@ is(d_eq = (sqrt(5)-1)/2);
 forget(db>da);
 
 order_ev(x, y) := ev(x) < ev(y);
-    /*print("before ev(expr), facts are", facts()),*/
-assume_and_eval(da, dx, dh, dl, 'expr) := block([da_:da, dx_:dx, dh_:dh, dl_:dl, vord:sort(['da, 'dx, 'dh, 'dl], 'order_ev)],
-    kill(da, dx, dh, dl),
+assume_and_eval(da, dx, dh, dl, 'expr) := block([vord:sort(['da, 'dx, 'dh, 'dl], 'order_ev)],
     context:tempc,
-    apply(assume, makelist(vord[i]<vord[i+1], i, length(vord)-1)),
-    result:ev(expr),
+    /* simplify expr, but don't evaluate it yet - use fresh variables */
+    expr:block([da, dx, dh, dl],
+        /* for assume() we need not bound variables, otherwise it will treat the facts as redundant */
+        apply(assume, makelist(vord[i]<vord[i+1], i, length(vord)-1)),
+        /* ev() is needed to compute diff */
+        ev(expr)
+    ),
     killcontext(tempc),
-    result
+    ev(expr)
 );
 
-p_A_less_B_fun(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, ev(ev(p_A_less_B), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+p_A_less_B_fun(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, p_A_less_B);
 
 /* Maxima 5.46.0 has a bug with 3d plots:
 set pm3d hidden3d 100 border lw 0.5 lt rgb "#000000"
@@ -103,10 +106,10 @@ plot3d(subst([dx=0, dh=db, dl=db], 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1],
 
 grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
 
-grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), dx), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), dh), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
-grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, at(diff(ev(p_A_less_B), dl), [da=da_, dx=dx_, dh=dh_, dl=dl_]));
+grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), da));
+grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), dx));
+grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), dh));
+grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), dl));
 
 is(grad_da(0.5, 0, 0.5, 0.5) = -0.125);
 is(grad_da_straightforward_BAD(0.5, 0, 0.5, 0.5) = -0.125);

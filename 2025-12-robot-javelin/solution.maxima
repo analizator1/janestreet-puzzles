@@ -128,8 +128,23 @@ context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Spears Robot with assumptions:", facts())$
 expr: ratsimp(subst(da=d_eq, ev(p_A_less_B)));
-solutions_spears: radcan(solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]));
+solutions_spears: solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]);
+solutions_spears: radcan(solutions_spears);
 killcontext(tempc);
+
+/* Maxima by default does rational simplification. Solutions here benefit from using a stronger radcan().
+   ratsimp(), which is also used by 'equal, cannot simplify solutions enough. In the example below, I took one of
+   solutions for dx (%o43) and compared it with radcan'ed version (solutions_spears). What's more, 'equal can give
+   incorrect result!
+(%i79) equal(rhs(%o43[2][1]), rhs(solutions_spears[2][1])), pred;
+(%o79)                               false
+(%i80) equal(rhs(%o43[2][1]), rhs(solutions_spears[2][1])), radcan;
+                              sqrt(5) - 1  sqrt(5) - 1
+(%o80)                  equal(-----------, -----------)
+                                   2            2
+(%i81) equal(rhs(%o43[2][1]), rhs(solutions_spears[2][1])), radcan, pred;
+(%o81)                               true
+*/
 
 /* Verify numeric estimates and analytic solutions. */
 for sol in append([estimates_spears], solutions_spears) do (
@@ -164,7 +179,8 @@ context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Java-lin with assumptions:", facts())$
 expr: ratsimp(subst(opt_vars_spears, ev(p_A_less_B)));
-solutions_javalin: radcan(solve(makelist(diff(expr, x), x, [da]), [da]));
+solutions_javalin: solve(makelist(diff(expr, x), x, [da]), [da]);
+solutions_javalin: radcan(solutions_javalin);
 killcontext(tempc);
 
 /* Verify numeric estimates and analytic solutions. */

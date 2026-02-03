@@ -22,7 +22,8 @@ m_(x) := if x >= 0 then x else 0;
  /* Measure of [a; b] interval. */
  m(a, b) := max(b-a, 0);
 
-/* We compute P(A<B) by splitting it into 8 parts. */
+/* General case, with Spears Robot (B) cheating against Java-lin (A).
+ * We compute P(A<B) by splitting it into 8 parts, calculated by hand. */
 p_A_less_B: apply("+", makelist(concat(part, i), i, 8));
 
 /* Cases where A1>=dx. This is the information that leaks to Spears Robot. */
@@ -45,8 +46,9 @@ part7: 1/2 * (1 - dl^2) * min(da, dx);
 /* P(A<B and A1>=da and B1>=dl and A1<dx) */
 part8: 1/2 * (m(da, dx) * (2 - da - dx) - m(da, min(dl, dx)) * (m(dx, dl) + m(da, dl)));
 
-/* Evaluate to get rid of partX in p_A_less_B. Later, we need ev(p_A_less_B) only to simplify the expression after we
- * assume() something. */
+/* Evaluate to get rid of partX in p_A_less_B. Later, we need ev(p_A_less_B, noeval) only to simplify the expression after we
+ * assume() something. In newer versions of Maxima there is resimplify() function.
+ */
 p_A_less_B: ev(p_A_less_B);
 
 /* Assumptions are necessary to get a nice result, and to get a result at all when computing diff. Without them, Maxima
@@ -61,24 +63,42 @@ assume(dx>0, dx<1);
 assume(dh>0, dh<1);
 assume(dl>0, dl<1);
 
-/* BEGIN verify P(A<B) when db>da */
-assume(db>da);
-/* We substitute variables in general P(A<B) to get the simple case, without Spears Robot cheating.
-   Then we compare it with manually calculated result for the simple case.
-   It actually revealed a bug.
-*/
-if not equal(ev(p_A_less_B, dx=0, dh=db, dl=db), 1/2*(-(da+1)*db^2+(da^2+da+1)*db-da+1)) then error("Incorrect result for the simple case") else OK;
+/* Simple case, when Spears Robot is not cheating. Calculated by hand. */
+p_A_less_B_simple: 1/2*(da*db + db*(1-da)^2 + da*(1-db^2) + (1-da)^2 - m(da, db)^2);
 
-/* Compute equilibrium. We rely on the assume(db>da). */
-opt_db_given_da: solve(diff(ev(p_A_less_B, dx=0, dh=db, dl=db), db), db)[1];
+/* Set it to true, otherwise 'if' might not get evaluated and verification will just return the 'if' as is, without raising
+ * an error.
+ */
+prederror: true;
+
+/* BEGIN verify p_A_less_B when db>da.
+ * We substitute variables in general P(A<B) to get the simple case, without Spears Robot cheating.
+ * Then we compare it with manually calculated result for the simple case.
+ * It actually revealed a bug.
+ */
+assume(db>da);
+/* In fact dx can be arbitrary here. TODO: check it */
+if not equal(subst([dx=0, dh=db, dl=db], p_A_less_B), p_A_less_B_simple) then error("Incorrect result for the simple case") else OK;
+forget(db>da);
+/* END verify p_A_less_B when db>da */
+
+/* BEGIN verify p_A_less_B when db<da.
+ */
+assume(db<da);
+/* In fact dx can be arbitrary here. TODO: check it */
+if not equal(subst([dx=0, dh=db, dl=db], p_A_less_B), p_A_less_B_simple) then error("Incorrect result for the simple case") else OK;
+forget(db<da);
+/* END verify p_A_less_B when db<da */
+
+/* Compute equilibrium. */
+assume(db>da);
+opt_db_given_da: solve(diff(subst([dx=0, dh=db, dl=db], p_A_less_B), db), db)[1];
 /* In equilibrium we should have db = da, therefore: */
 positive_equilibrium_solutions: sublist(solve(rhs(opt_db_given_da) = da), lambda([eq], rhs(eq) > 0));
 d_eq: rhs(positive_equilibrium_solutions[1]);
 /* Verify equilibrium is as expected. */
 is(d_eq = (sqrt(5)-1)/2);
-
 forget(db>da);
-/* END verify P(A<B) when db>da */
 
 /* Simplifies expr assuming variables in vord are in increasing order. That is, if vord = [x1, x2, x3, ...],
  * assume_and_simplify() makes assumptions: x1 < x2 < x3 < ... and returns simplified expr. Variables in vord must not
@@ -139,15 +159,15 @@ set pm3d hidden3d 100 border lw 0.5 lt rgb "#000000"
 "/tmp/maxout12350.gnuplot" line 9: invalid pm3d option
 */
 /* both should yield the same plot */
-plot3d(ev(p_A_less_B, dx=0, dh=db, dl=db), [da, 0, 1], [db, 0, 1]);
+plot3d(subst([dx=0, dh=db, dl=db], p_A_less_B), [da, 0, 1], [db, 0, 1]);
 plot3d(subst([dx=0, dh=db, dl=db], 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1], [db, 0, 1]);
 
-grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
+grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B, noeval), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
 
-grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), da));
-grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), dx));
-grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), dh));
-grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B), dl));
+grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), da));
+grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), dx));
+grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), dh));
+grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), dl));
 
 is(grad_da(0.5, 0, 0.5, 0.5) = -0.125);
 is(grad_da_straightforward_BAD(0.5, 0, 0.5, 0.5) = -0.125);
@@ -165,7 +185,8 @@ estimates_spears: lbfgs(subst(da=d_eq, '[-p_A_less_B_fun(da, dx, dh, dl), [-grad
 context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Spears Robot with assumptions:", facts())$
-expr: ratsimp(subst(da=d_eq, ev(p_A_less_B)));
+/* Note: we need to simplify before substitution, when da is still there. */
+expr: ratsimp(subst(da=d_eq, ev(p_A_less_B, noeval)));
 solutions_spears: solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]);
 solutions_spears: radcan(solutions_spears);
 killcontext(tempc);
@@ -216,7 +237,7 @@ estimates_javalin: lbfgs(subst(opt_vars_spears, '[p_A_less_B_fun(da, dx, dh, dl)
 context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Java-lin with assumptions:", facts())$
-expr: ratsimp(subst(opt_vars_spears, ev(p_A_less_B)));
+expr: ratsimp(subst(opt_vars_spears, ev(p_A_less_B, noeval)));
 solutions_javalin: solve(makelist(diff(expr, x), x, [da]), [da]);
 solutions_javalin: radcan(solutions_javalin);
 killcontext(tempc);

@@ -137,14 +137,14 @@ for order in permutations(['da, 'dx, 'dh, 'dl]) do (
  * evaluates the expression.
  */
 order_ev(x, y) := ev(x) < ev(y);
-assume_and_eval(da, dx, dh, dl, 'expr) := block([vord:sort(['da, 'dx, 'dh, 'dl], 'order_ev)],
+assume_and_eval(da, dx, dh, dl, expr) := block([vord:sort(['da, 'dx, 'dh, 'dl], 'order_ev)],
     context:tempc,
     /* simplify expr, but don't evaluate it yet - use fresh variables */
     expr:block([da, dx, dh, dl],
         /* for assume() we need not bound variables, otherwise it will treat the facts as redundant */
         apply(assume, makelist(vord[i]<vord[i+1], i, length(vord)-1)),
-        /* ev() is needed to compute diff */
-        ev(expr)
+        expr:ev(expr, noeval),
+        ev(expr, diff)
     ),
     killcontext(tempc),
     ev(expr)
@@ -162,15 +162,15 @@ set pm3d hidden3d 100 border lw 0.5 lt rgb "#000000"
 plot3d(subst([dx=0, dh=db, dl=db], p_A_less_B), [da, 0, 1], [db, 0, 1]);
 plot3d(subst([dx=0, dh=db, dl=db], 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1], [db, 0, 1]);
 
-grad_da_straightforward_BAD(da_, dx_, dh_, dl_) := at(diff(ev(p_A_less_B, noeval), da), [da=da_, dx=dx_, dh=dh_, dl=dl_]);
+grad_da_BAD(da, dx, dh, dl) := at(diff(p_A_less_B, 'da), ['da=da, 'dx=dx, 'dh=dh, 'dl=dl])$
 
-grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), da));
-grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), dx));
-grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), dh));
-grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(ev(p_A_less_B, noeval), dl));
+grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'da))$
+grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dx))$
+grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dh))$
+grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dl))$
 
 is(grad_da(0.5, 0, 0.5, 0.5) = -0.125);
-is(grad_da_straightforward_BAD(0.5, 0, 0.5, 0.5) = -0.125);
+is(grad_da_BAD(0.5, 0, 0.5, 0.5) = -0.125);
 
 load("lbfgs");
 

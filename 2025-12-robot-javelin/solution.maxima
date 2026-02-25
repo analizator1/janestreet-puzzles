@@ -1,6 +1,14 @@
 /* vim:filetype=maxima:et:sw=4:
  */
 
+/* Set format to gnuplot (defaults to gnuplot_pipes), which should be run synchronously, to make sure plot windows are
+ * shown in their separate, persistent windows (unlike gnuplot_pipes) when using Maxima in batch mode.
+ * Unfortunately Maxima 5.46.0 has a bug with 3d plots, and with "gnuplot" format it won't show plots at all
+ * (gnuplot_pipes is not affected).
+ */
+/*set_plot_option([plot_format, gnuplot]);
+get_plot_option(plot_format);*/
+
 /* Make sure conditionals get evaluated for some assertions using error(). */
 prederror: true;
 
@@ -96,11 +104,12 @@ for order in permutations(['da, 'dx, 'dh, 'dl]) do (
     all_forms_of_p_A_less_B: adjoin(expr, all_forms_of_p_A_less_B),
     print("-------")
 )$
+all_forms_of_p_A_less_B: listify(all_forms_of_p_A_less_B)$
 (
     print("There are", length(all_forms_of_p_A_less_B), "different forms of p_A_less_B depending on the order of",
         ['da, 'dx, 'dh, 'dl], "vars."),
     print("These are:"),
-    for form in all_forms_of_p_A_less_B do display(form)
+    for i: 1 thru length(all_forms_of_p_A_less_B) do display(all_forms_of_p_A_less_B[i])
 )$
 
 /* Because p_A_less_B does not have a single form that does not contain min/max and Maxima is unable to compute diff
@@ -122,17 +131,17 @@ assume_and_eval(da, dx, dh, dl, expr) := block([vord:sort(['da, 'dx, 'dh, 'dl], 
     ev(expr)
 );
 
-/* Originally p_A_less_B_fun() was needed just to test assume_and_eval(). It is not needed for lbfgs. */
-p_A_less_B_fun(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, p_A_less_B);
-
 /* Maxima 5.46.0 has a bug with 3d plots:
 set pm3d hidden3d 100 border lw 0.5 lt rgb "#000000"
                   ^
 "/tmp/maxout12350.gnuplot" line 9: invalid pm3d option
 */
-/* both should yield the same plot */
 plot3d(subst([dx=0, dh=db, dl=db], p_A_less_B), [da, 0, 1], [db, 0, 1]);
-plot3d(subst([dx=0, dh=db, dl=db], 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1], [db, 0, 1]);
+/* When Maxima is started in batch mode like: maxima -b <file>
+ * then without the read(), it might not show the plot at all before quitting. In fact, gnuplot process is left running
+ * when Maxima exits (that's the  case for gnuplot_pipes).
+ */
+/* read("just after plot3d"); */
 
 grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'da))$
 grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dx))$
@@ -152,89 +161,104 @@ if not numberp(grad_da_BAD(1/2, 1/3, 5/8, 1/2)) then OK else error("expected gra
 
 load("lbfgs");
 
-estimates_spears: lbfgs(subst(da=d_eq, '[-p_A_less_B_fun(da, dx, dh, dl), [-grad_dx(da, dx, dh, dl), -grad_dh(da, dx, dh, dl), -grad_dl(da, dx, dh, dl)]]), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
+/************************************************************************************************************************
+ * Maximize P(A<B) by computing optimal dx, dh, dl for Spears Robot, assuming Java-lin still uses equilibrium (da=d_eq).
+ * Since lbfgs does minimization, we do it for negated p_A_less_B.
+ ***********************************************************************************************************************/
+/* First a plot. Substituting da=d_eq we still have 3 variables, so we pick some arbitrary value of dx. */
+plot3d(subst([da=d_eq, dx=0.6], p_A_less_B), [dh, 0, 1], [dl, 0, 1]);
+spears_vars_estimate: lbfgs(subst(da=d_eq, [-p_A_less_B, '[-grad_dx(da, dx, dh, dl), -grad_dh(da, dx, dh, dl), -grad_dl(da, dx, dh, dl)]]), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
 /*
+   I  NFN     FUNC                    GNORM                   STEPLENGTH
+
+   1    3    -5.018703144690373D-01   6.229903853601900D-02   1.253157352396802D+00  
+...
+  13   26    -5.069660051307446D-01   8.711377098050442D-05   6.698146201515560D-01  
+
  THE MINIMIZATION TERMINATED WITHOUT DETECTING ERRORS.
  IFLAG = 0
-(%o34) [dx = 0.6181829933081731, dh = 0.6911577540600253, dl = 0.5000486022046384]
+(%o52) [dx = 0.6181829933081895, dh = 0.6911577540600441, 
+                                                        dl = 0.500048602204644]
 */
 
-/* Solve analytically for Spears Robot. We need to evaluate our formula with assumptions as for the expected range of optimum. */
+spears_vars_estimate_with_javalin_equilibrium: cons(da=d_eq, spears_vars_estimate)$
+if ev(is(dl<da and da<=dx and dx<dh), spears_vars_estimate_with_javalin_equilibrium) then OK else error("region of optimum for Spears vars not as expected");
+
+/* Solve analytically for Spears Robot.
+ * We need to evaluate our formula with assumptions as for the expected region of optimum. Actually we need to make a
+ * stronger assumption, with strict inequalities, otherwise the expression won't get simplified.
+ */
 context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Spears Robot with assumptions:", facts())$
 /* Note: we need to simplify before substitution, when da is still there. */
 expr: ratsimp(subst(da=d_eq, ev(p_A_less_B, noeval)));
-solutions_spears: solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]);
-solutions_spears: radcan(solutions_spears);
+spears_solutions_unverified: radcan(solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]));
 killcontext(tempc);
 
-/* equal() does rational simplification with ratsimp(). Solutions here benefit from using a stronger radcan().
- * equal() can give incorrect results!
-(%i79) equal(rhs(%o43[2][1]), rhs(solutions_spears[2][1])), pred;
-(%o79)                               false
-(%i80) equal(rhs(%o43[2][1]), rhs(solutions_spears[2][1])), radcan;
-                              sqrt(5) - 1  sqrt(5) - 1
-(%o80)                  equal(-----------, -----------)
-                                   2            2
-(%i81) equal(rhs(%o43[2][1]), rhs(solutions_spears[2][1])), radcan, pred;
-(%o81)                               true
-*/
-
-/* Verify numeric estimates and analytic solutions. */
-for sol in append([estimates_spears], solutions_spears) do (
-    sol: cons(da=d_eq, sol),
-    print("Checking solution for Spears Robot:", ev(sol, numer)),
-    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
-    print("Probability for Spears Robot is:", prob_spears),
-    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
+spears_solution: [];
+/* Filter analytic solutions to find the one that satisfies assumptions. */
+for sol in spears_solutions_unverified do (
+    sol_all_vars: cons(da=d_eq, sol),
+    print("Checking analytic solution for Spears Robot:", ev(sol_all_vars, numer)),
+    if ev(is(dl<da and da<=dx and dx<dh), sol_all_vars) then block([prob_spears],
+        prob_spears: ev(ev(p_A_less_B, sol_all_vars), numer),
+        print("Found a valid Spears Robot solution where winning probability for Spears Robot is:", prob_spears),
+        spears_solution: cons(sol, spears_solution)
+    ),
     print("-------")
 )$
-
-opt_vars_spears: solutions_spears[2];
-
-(
-    sol: cons(da=d_eq, opt_vars_spears),
-    print("Final solution for Spears Robot:", ev(sol, numer)),
-    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
-    print("Probability for Spears Robot is:", prob_spears),
-    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
-    print("-------")
-)$
+if length(spears_solution) = 1 then OK else error("unexpected length of spears_solution");
+spears_solution: spears_solution[1];
 
 /************************************************************************************************************************
- * Previously we maximized P(A<B). We now need to maximize probability for Java-lin, which is 1-P(A<B), by minimizing
- * P(A<B) over da, using previously computed optimal (for Spears Robot) dx, dh, dl, stored in opt_vars_spears.
-************************************************************************************************************************/
-/* plot2d(subst(opt_vars_spears, 'p_A_less_B_fun(da, dx, dh, dl)), [da, 0, 1]); */
-estimates_javalin: lbfgs(subst(opt_vars_spears, '[p_A_less_B_fun(da, dx, dh, dl), [grad_da(da, dx, dh, dl)]]), [da], [0.5], 1e-4, [1, 0]);
+ * We now need to maximize probability for Java-lin, which is 1-P(A<B), by minimizing P(A<B) over da, using previously
+ * computed optimal (for Spears Robot) dx, dh, dl, stored in spears_solution.
+ ***********************************************************************************************************************/
+plot2d(subst(spears_solution, p_A_less_B), [da, 0, 1]);
+javalin_var_estimate: lbfgs(subst(spears_solution, [p_A_less_B, '[grad_da(da, dx, dh, dl)]]), [da], [0.5], 1e-4, [1, 0]);
+/*
+   I  NFN     FUNC                    GNORM                   STEPLENGTH
 
-/* Solve analytically for Java-lin. We need to evaluate our formula with assumptions as for the expected range of optimum. */
+   1    3     5.060808580483095D-01   7.337931512074875D-03   7.058023013977328D-01  
+   2    4     5.060629096353509D-01   8.326672684688674D-17   1.000000000000000D+00  
+
+ THE MINIMIZATION TERMINATED WITHOUT DETECTING ERRORS.
+ IFLAG = 0
+(%o66)                     [da = 0.5833333333333334]
+*/
+
+javalin_var_estimate_with_spears_solution: cons(javalin_var_estimate, spears_solution)$
+if ev(is(dl<da and da<=dx and dx<dh), javalin_var_estimate_with_spears_solution) then OK else error("region of optimum for Java-lin var not as expected");
+
+/* Solve analytically for Java-lin. */
 context:tempc;
 assume(dl<da and da<dx and dx<dh);
 print("Solving analytically for Java-lin with assumptions:", facts())$
-expr: ratsimp(subst(opt_vars_spears, ev(p_A_less_B, noeval)));
-solutions_javalin: solve(makelist(diff(expr, x), x, [da]), [da]);
-solutions_javalin: radcan(solutions_javalin);
+expr: ratsimp(subst(spears_solution, ev(p_A_less_B, noeval)));
+javalin_solutions_unverified: radcan(solve(makelist(diff(expr, x), x, [da]), [da]));
 killcontext(tempc);
 
-/* Verify numeric estimates and analytic solutions. */
-for sol in append([estimates_javalin], solutions_javalin) do (
-    /* This time sol is not a list, but a single equation. */
-    sol: cons(sol, opt_vars_spears),
-    print("Checking solution for Java-lin:", ev(sol, numer)),
-    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
-    prob_javalin: ev(ev(1 - p_A_less_B, sol), numer), /* for Java-lin */
-    print("Probability for Spears Robot is:", prob_spears),
-    print("Probability for Java-lin is:", prob_javalin),
-    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
+javalin_solution: [];
+/* Filter analytic solutions to find the one that satisfies assumptions. */
+for sol in javalin_solutions_unverified do (
+    sol_all_vars: cons(sol, spears_solution),
+    print("Checking analytic solution for Java-lin:", ev(sol_all_vars, numer)),
+    if ev(is(dl<da and da<=dx and dx<dh), sol_all_vars) then block([prob_spears],
+        prob_spears: ev(ev(p_A_less_B, sol_all_vars), numer),
+        print("Found a valid solution for adjusted Java-lin strategy where winning probability for Spears Robot is:", prob_spears),
+        javalin_solution: cons(sol, javalin_solution)
+    ),
     print("-------")
 )$
+if length(javalin_solution) = 1 then OK else error("unexpected length of javalin_solution");
+javalin_solution: javalin_solution[1];
 
-opt_var_javalin: solutions_javalin[1];
-
+/************************************************************************************************************************
+ * Print the final summary.
+ ***********************************************************************************************************************/
 (
-    sol: cons(opt_var_javalin, opt_vars_spears),
+    sol: cons(javalin_solution, spears_solution),
     print("Final solution for Java-lin:", ev(sol, numer)),
     prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
     prob_javalin_exact: ev(1 - p_A_less_B, sol), /* for Java-lin */

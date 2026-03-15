@@ -4,19 +4,28 @@
 /* Set format to gnuplot (defaults to gnuplot_pipes), which should be run synchronously, to make sure plot windows are
  * shown in their separate, persistent windows (unlike gnuplot_pipes) when using Maxima in batch mode.
  * Unfortunately Maxima 5.46.0 has a bug with 3d plots, and with "gnuplot" format it won't show plots at all
- * (gnuplot_pipes is not affected).
+ * (gnuplot_pipes is not affected). You need Maxima 5.49.0 for these lines to work.
  */
-/*set_plot_option([plot_format, gnuplot]);
-get_plot_option(plot_format);*/
+set_plot_option([plot_format, gnuplot]);
+get_plot_option(plot_format);
 
 /* Make sure conditionals get evaluated for some assertions using error(). */
+/* TODO: introduce assert() instead of custom ifs and use it in assert() locally */
 prederror: true;
 
- /* Measure of [a; b] interval. */
+ /* Measure of the set: {x in R : a < x < b}. */
  m(a, b) := max(b-a, 0);
 
-/* General case, with Spears Robot (B) cheating against Java-lin (A).
- * We compute P(A<B) by splitting it into 8 parts, calculated by hand. */
+/* General case formula below, with Spears Robot cheating against Java-lin, with their final throw distance represented
+ * by random variables: B and A, respectively. Their first throw is denoted by B1 and A1, respectively.
+ * Their thresholds in the not-cheating case are da and db for A and B, respectively.
+ * Each robot must decide whether to reapeat their throw: they accept their first throw if it is greater than their
+ * threshold. If it is less, the robot goes for the second throw.
+ * In the general case, Spears Robot (the cheater) has a piece of information leaked: whether Java-lin's first throw was
+ * greater than some threshold (dx). If it is (A1>=dx) then it uses threshold dh to decide whether to go for the second
+ * throw. Otherwise (A1<dx) it uses threshold of dl.
+ * p_A_less_B is probability of Spears winning, that is P(A<B).
+ * We calculate it by splitting the probability space into 8 parts. */
 p_A_less_B: apply("+", makelist(concat(part, i), i, 8));
 
 /* Cases where A1>=dx. This is the information that leaks to Spears Robot. */

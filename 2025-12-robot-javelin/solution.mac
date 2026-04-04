@@ -1,6 +1,8 @@
 /* vim:filetype=maxima:et:sw=4:
  */
 
+assert('expr) := if maybe(ev(expr)) = true then OK else error("Error: assertion failed:", expr, "which evaluates to:", ev(expr), "which is:", maybe(ev(expr)))$
+
 /* Set format to gnuplot (defaults to gnuplot_pipes), which should be run synchronously, to make sure plot windows are
  * shown in their separate, persistent windows (unlike gnuplot_pipes) when using Maxima in batch mode.
  * Unfortunately Maxima 5.46.0 has a bug with 3d plots, and with "gnuplot" format it won't show plots at all
@@ -8,10 +10,6 @@
  */
 set_plot_option([plot_format, gnuplot]);
 get_plot_option(plot_format);
-
-/* Make sure conditionals get evaluated for some assertions using error(). */
-/* TODO: introduce assert() instead of custom ifs and use it in assert() locally */
-prederror: true;
 
  /* Measure of the set: {x in R : a < x < b}. */
  m(a, b) := max(b-a, 0);
@@ -69,14 +67,14 @@ p_A_less_B_simple: 1/2*(da*db + db*(1-da)^2 + da*(1-db^2) + (1-da)^2 - m(da, db)
  */
 assume(db>da);
 /* In fact dx can be arbitrary here, because dh=dl. FIXME: check it */
-if equal(subst([dx=0, dh=db, dl=db], p_A_less_B), p_A_less_B_simple) then OK else error("Incorrect result for the simple formula with db>da");
+assert(equal(subst([dx=0, dh=db, dl=db], p_A_less_B), p_A_less_B_simple))$
 forget(db>da);
 /********************************************/
 
 /******* verify p_A_less_B when db<da *******/
 assume(db<da);
 /* In fact dx can be arbitrary here, because dh=dl. FIXME: check it */
-if equal(subst([dx=0, dh=db, dl=db], p_A_less_B), p_A_less_B_simple) then OK else error("Incorrect result for the simple formula with db<da");
+assert(equal(subst([dx=0, dh=db, dl=db], p_A_less_B), p_A_less_B_simple))$
 forget(db<da);
 /********************************************/
 
@@ -86,7 +84,7 @@ opt_db_given_da: solve(diff(subst([dx=0, dh=db, dl=db], p_A_less_B), db), db)[1]
 /* In equilibrium we should have db = da, therefore: */
 positive_equilibrium_solutions: sublist(solve(rhs(opt_db_given_da) = da), lambda([eq], rhs(eq) > 0));
 d_eq: rhs(positive_equilibrium_solutions[1]);
-if d_eq = (sqrt(5)-1)/2 then OK else error("equilibrium not as expected");
+assert(d_eq = (sqrt(5)-1)/2)$
 forget(db>da);
 
 /* Simplifies expr assuming variables in vord are in increasing order. That is, if vord = [x1, x2, x3, ...],
@@ -160,13 +158,13 @@ grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dl)
 /* A not working "straightforward" evaluation of a diff of our expression, used as a demonstration. */
 grad_da_BAD(da, dx, dh, dl) := at(diff(p_A_less_B, 'da), ['da=da, 'dx=dx, 'dh=dh, 'dl=dl])$
 
-if grad_da(0.5, 0, 0.5, 0.5) = -0.125 then OK else error("expected grad_da to work for the first point");
+assert(grad_da(0.5, 0, 0.5, 0.5) = -0.125)$
 /* Surprisingly, for this simple point even the "bad" function works. */
-if grad_da_BAD(0.5, 0, 0.5, 0.5) = -0.125 then OK else error("expected grad_da_BAD to work for the first point");
+assert(grad_da_BAD(0.5, 0, 0.5, 0.5) = -0.125)$
 
-if grad_da(1/2, 1/3, 5/8, 1/2) = -9/128 then OK else error("expected grad_da to work for the second point");
+assert(grad_da(1/2, 1/3, 5/8, 1/2) = -9/128)$
 /* But it does not work for this one. */
-if not numberp(grad_da_BAD(1/2, 1/3, 5/8, 1/2)) then OK else error("expected grad_da_BAD to FAIL for the second point");
+assert(not numberp(grad_da_BAD(1/2, 1/3, 5/8, 1/2)))$
 
 load("lbfgs");
 
@@ -191,7 +189,7 @@ spears_vars_estimate: lbfgs(subst(da=d_eq, [-p_A_less_B, '[-grad_dx(da, dx, dh, 
 */
 
 spears_vars_estimate_with_javalin_equilibrium: cons(da=d_eq, spears_vars_estimate)$
-if ev(is(dl<da and da<=dx and dx<dh), spears_vars_estimate_with_javalin_equilibrium) then OK else error("region of optimum for Spears vars not as expected");
+assert(ev(is(dl<da and da<=dx and dx<dh), spears_vars_estimate_with_javalin_equilibrium))$
 
 /* Solve analytically for Spears Robot.
  * We need to evaluate our formula with assumptions as for the expected region of optimum. Actually we need to make a
@@ -217,7 +215,7 @@ for sol in spears_solutions_unverified do (
     ),
     print("-------")
 )$
-if length(spears_solution) = 1 then OK else error("unexpected length of spears_solution");
+assert(length(spears_solution) = 1)$
 spears_solution: spears_solution[1];
 
 /************************************************************************************************************************
@@ -238,7 +236,7 @@ javalin_var_estimate: lbfgs(subst(spears_solution, [p_A_less_B, '[grad_da(da, dx
 */
 
 javalin_var_estimate_with_spears_solution: cons(javalin_var_estimate, spears_solution)$
-if ev(is(dl<da and da<=dx and dx<dh), javalin_var_estimate_with_spears_solution) then OK else error("region of optimum for Java-lin var not as expected");
+assert(ev(is(dl<da and da<=dx and dx<dh), javalin_var_estimate_with_spears_solution))$
 
 /* Solve analytically for Java-lin. */
 context:tempc;
@@ -260,7 +258,7 @@ for sol in javalin_solutions_unverified do (
     ),
     print("-------")
 )$
-if length(javalin_solution) = 1 then OK else error("unexpected length of javalin_solution");
+assert(length(javalin_solution) = 1)$
 javalin_solution: javalin_solution[1];
 
 /************************************************************************************************************************
@@ -279,4 +277,4 @@ javalin_solution: javalin_solution[1];
     print("-------")
 )$
 
-if prob_javalin_rounded = 0.4939370904 then OK else error("Java-lin final rounded probability not as expected");
+assert(prob_javalin_rounded = 0.4939370904)$

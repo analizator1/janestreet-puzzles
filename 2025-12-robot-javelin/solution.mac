@@ -87,38 +87,6 @@ d_eq: rhs(positive_equilibrium_solutions[1]);
 assert(d_eq = (sqrt(5)-1)/2)$
 forget(db>da);
 
-/* Simplifies expr assuming variables in vord are in increasing order. That is, if vord = [x1, x2, x3, ...],
- * assume_and_simplify() makes assumptions: x1 < x2 < x3 < ... and returns simplified expr. Variables in vord must not
- * be bound.
- */
-assume_and_simplify(expr, vord) := (
-    context:tempc,
-    apply(assume, makelist(vord[i]<vord[i+1], i, length(vord)-1)),
-    expr: ev(expr, noeval),
-    killcontext(tempc),
-    expr
-);
-
-/* Maybe p_A_less_B simplifies to a single formula? Let's check all possible orderings of variables. For each ordering,
- * we simplify it so that it no longer contains min/max.
- */
-all_forms_of_p_A_less_B: {};
-for order in permutations(['da, 'dx, 'dh, 'dl]) do (
-    /* assume_and_simplify does a general simplification, we need to do rational simplification too. We use rat() to
-     * make sure we get a canonical form to let us eliminate duplicates. */
-    expr: rat(assume_and_simplify(p_A_less_B, order)),
-    print("order", order, "gives p_A_less_B simplified to:", string(expr)),
-    all_forms_of_p_A_less_B: adjoin(expr, all_forms_of_p_A_less_B),
-    print("-------")
-)$
-all_forms_of_p_A_less_B: listify(all_forms_of_p_A_less_B)$
-(
-    print("There are", length(all_forms_of_p_A_less_B), "different forms of p_A_less_B depending on the order of",
-        ['da, 'dx, 'dh, 'dl], "vars."),
-    print("These are:"),
-    for i: 1 thru length(all_forms_of_p_A_less_B) do display(all_forms_of_p_A_less_B[i])
-)$
-
 /* Because p_A_less_B does not have a single form that does not contain min/max and Maxima is unable to compute diff
  * value in a given point when a function contains min/max (or conditional expressions), we need to define a helper
  * assume_and_eval() that simplifies an expression knowing a point at which it needs to be computed, and then it

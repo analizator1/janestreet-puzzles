@@ -106,17 +106,7 @@ assume_and_eval(da, dx, dh, dl, expr) := block([vord:sort(['da, 'dx, 'dh, 'dl], 
     ev(expr)
 );
 
-/* Maxima 5.46.0 has a bug with 3d plots:
-set pm3d hidden3d 100 border lw 0.5 lt rgb "#000000"
-                  ^
-"/tmp/maxout12350.gnuplot" line 9: invalid pm3d option
-*/
 plot3d(subst([dx=0, dh=db, dl=db], p_A_less_B), [da, 0, 1], [db, 0, 1]);
-/* When Maxima is started in batch mode like: maxima -b <file>
- * then without the read(), it might not show the plot at all before quitting. In fact, gnuplot process is left running
- * when Maxima exits (that's the  case for gnuplot_pipes).
- */
-/* read("just after plot3d"); */
 
 grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'da))$
 grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dx))$

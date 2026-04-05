@@ -87,42 +87,20 @@ d_eq: rhs(positive_equilibrium_solutions[1]);
 assert(d_eq = (sqrt(5)-1)/2)$
 forget(db>da);
 
-/* Because p_A_less_B does not have a single form that does not contain min/max and Maxima is unable to compute diff
- * value in a given point when a function contains min/max (or conditional expressions), we need to define a helper
- * assume_and_eval() that simplifies an expression knowing a point at which it needs to be computed, and then it
- * evaluates the expression.
- */
-order_ev(x, y) := ev(x) < ev(y);
-assume_and_eval(da, dx, dh, dl, expr) := block([vord:sort(['da, 'dx, 'dh, 'dl], 'order_ev)],
-    context:tempc,
-    /* simplify expr, but don't evaluate it yet - use fresh variables */
-    expr:block([da, dx, dh, dl],
-        /* for assume() we need not bound variables, otherwise it will treat the facts as redundant */
-        apply(assume, makelist(vord[i]<vord[i+1], i, length(vord)-1)),
-        expr:ev(expr, noeval),
-        ev(expr, diff)
-    ),
-    killcontext(tempc),
-    ev(expr)
-);
-
 plot3d(subst([dx=0, dh=db, dl=db], p_A_less_B), [da, 0, 1], [db, 0, 1]);
 
-grad_da(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'da))$
-grad_dx(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dx))$
-grad_dh(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dh))$
-grad_dl(da, dx, dh, dl) := assume_and_eval(da, dx, dh, dl, diff(p_A_less_B, 'dl))$
+gradef(max(x, y),
+    if x>y then 1 else 0,
+    if x>y then 0 else 1
+);
+gradef(min(x, y),
+    if x<y then 1 else 0,
+    if x<y then 0 else 1
+);
 
-/* A not working "straightforward" evaluation of a diff of our expression, used as a demonstration. */
-grad_da_BAD(da, dx, dh, dl) := at(diff(p_A_less_B, 'da), ['da=da, 'dx=dx, 'dh=dh, 'dl=dl])$
-
+define(grad_da(da, dx, dh, dl), diff(p_A_less_B, da));
 assert(grad_da(0.5, 0, 0.5, 0.5) = -0.125)$
-/* Surprisingly, for this simple point even the "bad" function works. */
-assert(grad_da_BAD(0.5, 0, 0.5, 0.5) = -0.125)$
-
 assert(grad_da(1/2, 1/3, 5/8, 1/2) = -9/128)$
-/* But it does not work for this one. */
-assert(not numberp(grad_da_BAD(1/2, 1/3, 5/8, 1/2)))$
 
 load("lbfgs");
 
@@ -132,7 +110,7 @@ load("lbfgs");
  ***********************************************************************************************************************/
 /* First a plot. Substituting da=d_eq we still have 3 variables, so we pick some arbitrary value of dx. */
 plot3d(subst([da=d_eq, dx=0.6], p_A_less_B), [dh, 0, 1], [dl, 0, 1]);
-spears_vars_estimate: lbfgs(subst(da=d_eq, [-p_A_less_B, '[-grad_dx(da, dx, dh, dl), -grad_dh(da, dx, dh, dl), -grad_dl(da, dx, dh, dl)]]), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
+spears_vars_estimate: lbfgs(subst(da=d_eq, -p_A_less_B), [dx, dh, dl], [0.5, 0.5, 0.5], 1e-4, [1, 0]);
 /*
    I  NFN     FUNC                    GNORM                   STEPLENGTH
 
@@ -181,7 +159,7 @@ spears_solution: spears_solution[1];
  * computed optimal (for Spears Robot) dx, dh, dl, stored in spears_solution.
  ***********************************************************************************************************************/
 plot2d(subst(spears_solution, p_A_less_B), [da, 0, 1]);
-javalin_var_estimate: lbfgs(subst(spears_solution, [p_A_less_B, '[grad_da(da, dx, dh, dl)]]), [da], [0.5], 1e-4, [1, 0]);
+javalin_var_estimate: lbfgs(subst(spears_solution, p_A_less_B), [da], [0.5], 1e-4, [1, 0]);
 /*
    I  NFN     FUNC                    GNORM                   STEPLENGTH
 

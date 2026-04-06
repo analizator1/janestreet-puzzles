@@ -154,6 +154,10 @@ for sol in spears_solutions_unverified do (
 assert(length(spears_solution) = 1)$
 spears_solution: spears_solution[1];
 
+assert(equal(assoc(dx, spears_solution), (sqrt(5)-1)/2))$
+assert(equal(assoc(dh, spears_solution), (5-sqrt(5))/4))$
+assert(equal(assoc(dl, spears_solution), 1/2))$
+
 /************************************************************************************************************************
  * We now need to maximize probability for Java-lin, which is 1-P(A<B), by minimizing P(A<B) over da, using previously
  * computed optimal (for Spears Robot) dx, dh, dl, stored in spears_solution.
@@ -197,6 +201,8 @@ for sol in javalin_solutions_unverified do (
 assert(length(javalin_solution) = 1)$
 javalin_solution: javalin_solution[1];
 
+assert(javalin_solution = (da=7/12))$
+
 /************************************************************************************************************************
  * Print the final summary.
  ***********************************************************************************************************************/
@@ -214,3 +220,4 @@ javalin_solution: javalin_solution[1];
 )$
 
 assert(prob_javalin_rounded = 0.4939370904)$
+assert(equal(prob_javalin_exact, (229-60*sqrt(5))/192))$

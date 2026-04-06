@@ -125,7 +125,7 @@ spears_vars_estimate: lbfgs(subst(da=d_eq, -p_A_less_B), [dx, dh, dl], [0.5, 0.5
 */
 
 spears_vars_estimate_with_javalin_equilibrium: cons(da=d_eq, spears_vars_estimate)$
-assert(ev(is(dl<da and da<=dx and dx<dh), spears_vars_estimate_with_javalin_equilibrium))$
+assert(subst(spears_vars_estimate_with_javalin_equilibrium, dl<da and da<=dx and dx<dh))$
 
 /* Solve analytically for Spears Robot.
  * We need to evaluate our formula with assumptions as for the expected region of optimum. Actually we need to make a
@@ -139,20 +139,20 @@ expr: ratsimp(subst(da=d_eq, ev(p_A_less_B, noeval)));
 spears_solutions_unverified: radcan(solve(makelist(diff(expr, x), x, [dx, dh, dl]), [dx, dh, dl]));
 killcontext(tempc);
 
-spears_solution: [];
+spears_solutions: [];
 /* Filter analytic solutions to find the one that satisfies assumptions. */
 for sol in spears_solutions_unverified do (
     sol_all_vars: cons(da=d_eq, sol),
     print("Checking analytic solution for Spears Robot:", ev(sol_all_vars, numer)),
-    if ev(is(dl<da and da<=dx and dx<dh), sol_all_vars) then block([prob_spears],
-        prob_spears: ev(ev(p_A_less_B, sol_all_vars), numer),
-        print("Found a valid Spears Robot solution where winning probability for Spears Robot is:", prob_spears),
-        spears_solution: cons(sol, spears_solution)
+    if subst(sol_all_vars, dl<da and da<=dx and dx<dh) then block([prob_spears],
+        prob_spears: subst(sol_all_vars, p_A_less_B),
+        print("Found a valid Spears Robot solution where winning probability for Spears Robot is:", ev(prob_spears, numer)),
+        spears_solutions: cons(sol, spears_solutions)
     ),
     print("-------")
 )$
-assert(length(spears_solution) = 1)$
-spears_solution: spears_solution[1];
+assert(length(spears_solutions) = 1)$
+spears_solution: spears_solutions[1];
 
 assert(equal(assoc(dx, spears_solution), (sqrt(5)-1)/2))$
 assert(equal(assoc(dh, spears_solution), (5-sqrt(5))/4))$
@@ -174,9 +174,10 @@ javalin_var_estimate: lbfgs(subst(spears_solution, p_A_less_B), [da], [0.5], 1e-
  IFLAG = 0
 (%o66)                     [da = 0.5833333333333334]
 */
+javalin_var_estimate: javalin_var_estimate[1];
 
 javalin_var_estimate_with_spears_solution: cons(javalin_var_estimate, spears_solution)$
-assert(ev(is(dl<da and da<=dx and dx<dh), javalin_var_estimate_with_spears_solution))$
+assert(subst(javalin_var_estimate_with_spears_solution, dl<da and da<=dx and dx<dh))$
 
 /* Solve analytically for Java-lin. */
 context:tempc;
@@ -186,38 +187,36 @@ expr: ratsimp(subst(spears_solution, ev(p_A_less_B, noeval)));
 javalin_solutions_unverified: radcan(solve(makelist(diff(expr, x), x, [da]), [da]));
 killcontext(tempc);
 
-javalin_solution: [];
+javalin_solutions: [];
 /* Filter analytic solutions to find the one that satisfies assumptions. */
 for sol in javalin_solutions_unverified do (
     sol_all_vars: cons(sol, spears_solution),
     print("Checking analytic solution for Java-lin:", ev(sol_all_vars, numer)),
-    if ev(is(dl<da and da<=dx and dx<dh), sol_all_vars) then block([prob_spears],
-        prob_spears: ev(ev(p_A_less_B, sol_all_vars), numer),
-        print("Found a valid solution for adjusted Java-lin strategy where winning probability for Spears Robot is:", prob_spears),
-        javalin_solution: cons(sol, javalin_solution)
+    if subst(sol_all_vars, dl<da and da<=dx and dx<dh) then block([prob_spears],
+        prob_spears: subst(sol_all_vars, p_A_less_B),
+        print("Found a valid solution for adjusted Java-lin strategy where winning probability for Spears Robot is:", ev(prob_spears, numer)),
+        javalin_solutions: cons(sol, javalin_solutions)
     ),
     print("-------")
 )$
-assert(length(javalin_solution) = 1)$
-javalin_solution: javalin_solution[1];
+assert(length(javalin_solutions) = 1)$
+javalin_solution: javalin_solutions[1];
 
 assert(javalin_solution = (da=7/12))$
 
-/************************************************************************************************************************
- * Print the final summary.
- ***********************************************************************************************************************/
 (
-    sol: cons(javalin_solution, spears_solution),
-    print("Final solution for Java-lin:", ev(sol, numer)),
-    prob_spears: ev(ev(p_A_less_B, sol), numer), /* for Spears Robot */
-    prob_javalin_exact: ev(1 - p_A_less_B, sol), /* for Java-lin */
+    print(""),
+    print("########## Summary of Java-lin adjusted strategy ########## "),
+    final_solution: cons(javalin_solution, spears_solution),
+    prob_spears_exact: subst(final_solution, p_A_less_B),
+    prob_javalin_exact: 1 - prob_spears_exact,
     prob_javalin_rounded: ev(round(prob_javalin_exact * 10^10) / 10^10, numer),
-    print("Probability for Spears Robot is:", prob_spears),
-    print("Probability for Java-lin is:", ratsimp(prob_javalin_exact), "which equals:", ev(prob_javalin_exact, numer)),
+    print("Probability for Spears Robot is:", ratsimp(prob_spears_exact)),
+    print("Probability for Java-lin is:", ratsimp(prob_javalin_exact)),
     print("Probability for Java-lin rounded to 10 places is:", prob_javalin_rounded),
-    print("Assumptions satisfied:", ev(is(dl<da and da<=dx and dx<dh), sol)),
-    print("-------")
+    print("Thresholds:", final_solution)
 )$
 
 assert(prob_javalin_rounded = 0.4939370904)$
 assert(equal(prob_javalin_exact, (229-60*sqrt(5))/192))$
+assert(subst(final_solution, dl<da and da<=dx and dx<dh))$
